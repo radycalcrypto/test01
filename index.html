@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PILL Presale Interface</title>
+<title>PILL Presale</title>
 
 <!-- Ethers.js v5 -->
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
@@ -72,7 +72,7 @@ input {
 
 <div class="container">
     <h1>PILL Presale</h1>
-    <button id="connectBtn" onclick="connectWallet()">Conectar MetaMask</button>
+    <button id="connectBtn">Conectar MetaMask</button>
 
     <div id="infoCard" style="margin-top:20px;">
         <div id="priceDisplay">Preço do token: -- ETH</div>
@@ -99,12 +99,12 @@ const abiPresale = [
 
 let presaleContract;
 
+// Conectar MetaMask
 async function connectWallet() {
     if (!window.ethereum) {
         alert("MetaMask não encontrada!");
         return;
     }
-
     try {
         await window.ethereum.request({ method: "eth_requestAccounts" });
         provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -114,16 +114,17 @@ async function connectWallet() {
         presaleContract = new ethers.Contract(presaleAddress, abiPresale, signer);
 
         document.getElementById("connectBtn").innerText = 
-            "Conectado: " + account.substring(0,6) + "..." + account.substring(38);
+            "Conectado: " + account.substring(0,6) + "..." + account.slice(-4);
         document.getElementById("connectBtn").style.background="#00ffaa";
 
         updateUI();
     } catch(err) {
-        console.error("Erro MetaMask:", err);
+        console.error("Erro ao conectar MetaMask:", err);
         alert("Erro ao conectar MetaMask! Veja console.");
     }
 }
 
+// Atualizar UI
 async function updateUI() {
     if (!presaleContract) return;
     try {
@@ -141,6 +142,7 @@ async function updateUI() {
     }
 }
 
+// Comprar tokens
 async function buyTokens() {
     if (!signer) return alert("Conecte a MetaMask primeiro.");
     const ethAmount = document.getElementById("ethAmount").value;
@@ -158,8 +160,10 @@ async function buyTokens() {
     }
 }
 
-// Atualiza automaticamente a UI a cada 10 segundos
+// Atualiza UI a cada 10 segundos
 setInterval(updateUI,10000);
+
+document.getElementById("connectBtn").addEventListener("click", connectWallet);
 </script>
 
 </body>
