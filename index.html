@@ -1,337 +1,213 @@
-// Pill Launch Page - Single-file React component
-// TailwindCSS required in host app. Assumes ethers.js is available globally (imported).
-// Designed to be dropped into a React app (Vite/Create React App/Next.js) that supports Tailwind.
-// Colors: black background, neon green & red accents, matrix-style background animation.
-// Connects to Metamask, reads presale info from launchpad contract, shows dynamic price, progress, countdown, buys via buy() payable.
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pill Presale</title>
 
-import React, { useEffect, useState, useMemo } from "react";
-import { ethers } from "ethers";
-
-// =========================
-// CONFIG
-// =========================
-const LAUNCHPAD_ADDRESS = "0x72A9a07EC3Fdd4A58332C5ED37F6d35a72d541c9";
-const TOKEN_ADDRESS = "0xeecc2eb7645a86549321433511b61866eeb13611";
-// Minimal ABI for the launchpad contract (read-only + buy)
-const LAUNCHPAD_ABI = [
-  "function presaleRate() view returns (uint256)",
-  "function listingRate() view returns (uint256)",
-  "function totalETH() view returns (uint256)",
-  "function softCap() view returns (uint256)",
-  "function hardCap() view returns (uint256)",
-  "function minBuy() view returns (uint256)",
-  "function maxBuy() view returns (uint256)",
-  "function startTime() view returns (uint256)",
-  "function endTime() view returns (uint256)",
-  "function feePercent() view returns (uint256)",
-  "function liquidityPercent() view returns (uint256)",
-  "function contributions(address) view returns (uint256)",
-  "function buy() payable",
-];
-
-const TOKEN_ABI = [
-  "function decimals() view returns (uint8)",
-  "function name() view returns (string)",
-  "function symbol() view returns (string)",
-  "function balanceOf(address) view returns (uint256)",
-];
-
-// =========================
-// Helper functions
-// =========================
-function formatEtherBig(value) {
-  try {
-    return ethers.utils.formatEther(value);
-  } catch (e) {
-    return "0";
-  }
-}
-
-function formatNumber(n, digits = 2) {
-  return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
-}
-
-function secondsToDHMS(seconds) {
-  seconds = Math.max(0, Math.floor(seconds));
-  const d = Math.floor(seconds / (3600 * 24));
-  const h = Math.floor((seconds % (3600 * 24)) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return { d, h, m, s };
-}
-
-// =========================
-// React component
-// =========================
-export default function PillLaunchPage() {
-  const [provider, setProvider] = useState(null);
-  const [signer, setSigner] = useState(null);
-  const [account, setAccount] = useState(null);
-  const [network, setNetwork] = useState(null);
-
-  const [launchpad, setLaunchpad] = useState(null);
-  const [token, setToken] = useState(null);
-
-  const [info, setInfo] = useState({});
-  const [now, setNow] = useState(Math.floor(Date.now() / 1000));
-
-  const [buyAmountETH, setBuyAmountETH] = useState(0.05);
-  const [txStatus, setTxStatus] = useState(null);
-
-  // Connect to MetaMask
-  async function connectWallet() {
-    if (!window.ethereum) {
-      alert('MetaMask not found. Install or enable a provider.');
-      return;
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        background: black;
+        color: #00ff9f;
+        font-family: Arial, sans-serif;
+        overflow-x: hidden;
     }
-    const p = new ethers.providers.Web3Provider(window.ethereum, "any");
-    await p.send("eth_requestAccounts", []);
-    const s = p.getSigner();
-    const addr = await s.getAddress();
-    const net = await p.getNetwork();
 
-    setProvider(p);
-    setSigner(s);
-    setAccount(addr);
-    setNetwork(net);
-  }
-
-  // Initialize contracts
-  useEffect(() => {
-    if (!provider) return;
-    const lp = new ethers.Contract(LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, provider);
-    const tk = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, provider);
-    setLaunchpad(lp);
-    setToken(tk);
-  }, [provider]);
-
-  // Fetch static/dynamic info from contract
-  async function fetchInfo() {
-    if (!launchpad || !token) return;
-    try {
-      const [presaleRate, listingRate, totalETH, softCap, hardCap, minBuy, maxBuy, startTime, endTime, feePercent, liquidityPercent] = await Promise.all([
-        launchpad.presaleRate(),
-        launchpad.listingRate(),
-        launchpad.totalETH(),
-        launchpad.softCap(),
-        launchpad.hardCap(),
-        launchpad.minBuy(),
-        launchpad.maxBuy(),
-        launchpad.startTime(),
-        launchpad.endTime(),
-        launchpad.feePercent(),
-        launchpad.liquidityPercent(),
-      ]);
-
-      const [decimals, name, symbol] = await Promise.all([
-        token.decimals(),
-        token.name(),
-        token.symbol(),
-      ]);
-
-      setInfo({ presaleRate, listingRate, totalETH, softCap, hardCap, minBuy, maxBuy, startTime, endTime, feePercent, liquidityPercent, decimals, name, symbol });
-    } catch (e) {
-      console.error('fetchInfo error', e);
+    /* MATRIX BACKGROUND */
+    canvas#matrixBG {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: -1;
     }
-  }
 
-  // polling clock and info
-  useEffect(() => {
-    fetchInfo();
-    const t1 = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
-    const t2 = setInterval(() => fetchInfo(), 15000); // refresh every 15s
-    return () => { clearInterval(t1); clearInterval(t2); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [launchpad, token]);
-
-  // Derived values
-  const presaleRateNum = useMemo(() => {
-    if (!info.presaleRate || !info.decimals) return 0;
-    try {
-      // presaleRate is tokens per 1 ETH with token precision multiplied by 1 ether
-      // e.g., if presaleRate = 1000 * 1e18, then tokens per ETH = 1000
-      return Number(ethers.utils.formatUnits(info.presaleRate.toString(), 18 - 0));
-    } catch (e) {
-      return 0;
+    .container {
+        text-align: center;
+        padding: 40px 20px;
     }
-  }, [info]);
 
-  const salePhase = useMemo(() => {
-    if (!info.startTime || !info.endTime) return 'unknown';
-    if (now < Number(info.startTime)) return 'upcoming';
-    if (now >= Number(info.startTime) && now <= Number(info.endTime)) return 'live';
-    return 'ended';
-  }, [info, now]);
-
-  const timeLeft = useMemo(() => {
-    if (!info.endTime) return 0;
-    return Math.max(0, Number(info.endTime) - now);
-  }, [info, now]);
-
-  // Progress toward softCap/hardCap
-  const progress = useMemo(() => {
-    try {
-      const total = Number(ethers.utils.formatEther(info.totalETH || 0));
-      const soft = Number(ethers.utils.formatEther(info.softCap || 0)) || 0;
-      const hard = Number(ethers.utils.formatEther(info.hardCap || 0)) || 0;
-      const pctSoft = soft > 0 ? Math.min(100, (total / soft) * 100) : 0;
-      const pctHard = hard > 0 ? Math.min(100, (total / hard) * 100) : 0;
-      return { total, soft, hard, pctSoft, pctHard };
-    } catch (e) {
-      return { total: 0, soft: 0, hard: 0, pctSoft: 0, pctHard: 0 };
+    .logo {
+        width: 240px;
+        height: auto;
+        margin-bottom: 20px;
+        border-radius: 12px;
+        box-shadow: 0 0 20px #00ff9f;
     }
-  }, [info]);
 
-  // Buy function (uses signer)
-  async function buy() {
-    if (!signer) { alert('Conecte a carteira'); return; }
-    try {
-      setTxStatus('sending');
-      const contractWithSigner = new ethers.Contract(LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, signer);
-      const value = ethers.utils.parseEther(String(buyAmountETH));
-      const tx = await contractWithSigner.buy({ value });
-      setTxStatus('pending');
-      await tx.wait();
-      setTxStatus('confirmed');
-      setBuyAmountETH(0.05);
-      fetchInfo();
-    } catch (e) {
-      console.error('buy error', e);
-      setTxStatus('error');
-      alert(e?.data?.message || e?.message || 'Erro ao enviar transacao');
+    h1 {
+        font-size: 42px;
+        color: #00ffaa;
+        text-shadow: 0 0 10px #00ff99;
     }
-  }
 
-  // UI pieces
-  const countdown = secondsToDHMS(timeLeft);
+    .card {
+        background: rgba(0, 0, 0, 0.55);
+        border: 1px solid #00ff88;
+        max-width: 420px;
+        margin: 20px auto;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 0 20px #00ff66;
+    }
 
-  return (
-    <div className="min-h-screen text-white bg-black relative overflow-hidden font-sans">
-      {/* Matrix style animated background */}
-      <div className="absolute inset-0 pointer-events-none">
-        <canvas id="matrixCanvas" className="w-full h-full opacity-20"></canvas>
-      </div>
+    button {
+        background: #00ff99;
+        border: none;
+        padding: 15px 32px;
+        border-radius: 10px;
+        color: black;
+        font-size: 18px;
+        cursor: pointer;
+        transition: 0.3s;
+        font-weight: bold;
+    }
 
-      <div className="relative z-10 container mx-auto px-4 py-12">
-        <div className="max-w-4xl mx-auto bg-[rgba(0,0,0,0.6)] backdrop-blur-sm rounded-2xl border border-[#0f0f0f] p-8 shadow-2xl">
-          <header className="flex flex-col items-center justify-center mb-10 text-center">
-  <img src="A_digital_graphic_design_of_a_cryptocurrency_presa.png" alt="Pill Presale Logo" className="w-48 h-auto mb-6 rounded-xl shadow-lg" />
-  <h1 className="text-4xl font-bold tracking-tight">Pill Presale — Fair Launch</h1>
-  <p className="text-sm text-gray-300 mt-2">Token: PILL • Launchpad Minimalista</p>
-</header>
+    button:hover {
+        background: red;
+        color: white;
+        box-shadow: 0 0 20px red;
+    }
 
-          <main className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Left: sale info */}
-            <section className="md:col-span-2 bg-[rgba(255,255,255,0.02)] p-6 rounded-xl border border-[#06303a]">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold">Sale Status</h2>
-                  <div className="text-sm text-gray-300">{salePhase === 'upcoming' ? 'Upcoming' : salePhase === 'live' ? 'Live' : 'Ended'}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-gray-400">Fee</div>
-                  <div className="text-sm">{info.feePercent ?? '--'}%</div>
-                </div>
-              </div>
+    .info {
+        margin: 8px 0;
+        font-size: 18px;
+    }
 
-              <div className="mb-4">
-                <div className="w-full bg-[#04110b] rounded-full h-4 overflow-hidden">
-                  <div style={{ width: `${progress.pctHard}%` }} className={`h-4 rounded-full ${progress.pctHard >= 100 ? 'bg-red-600' : 'bg-green-500'}`}></div>
-                </div>
-                <div className="mt-2 text-xs text-gray-400 flex justify-between">
-                  <div>Raised: {formatNumber(progress.total)} ETH</div>
-                  <div>SoftCap: {formatNumber(progress.soft)} ETH</div>
-                </div>
-              </div>
+    .countdown {
+        font-size: 22px;
+        margin-bottom: 20px;
+        font-weight: bold;
+        color: #ff4444;
+    }
+</style>
+</head>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-[rgba(0,0,0,0.35)] rounded-md">
-                  <div className="text-xs text-gray-400">Price (presale)</div>
-                  <div className="text-xl font-semibold">{presaleRateNum ? `${formatNumber(presaleRateNum)} ${info.symbol ?? ''} / ETH` : '--'}</div>
-                </div>
-                <div className="p-4 bg-[rgba(0,0,0,0.35)] rounded-md">
-                  <div className="text-xs text-gray-400">Min / Max Buy</div>
-                  <div className="text-lg">{info.minBuy ? `${formatNumber(ethers.utils.formatEther(info.minBuy))} / ${info.maxBuy ? formatNumber(ethers.utils.formatEther(info.maxBuy)) : 'No limit'} ETH` : '--'}</div>
-                </div>
-              </div>
+<body>
 
-              <div className="mt-6 p-4 bg-gradient-to-b from-black/50 to-black/20 rounded-md border border-[#06303a]">
-                <div className="text-sm text-gray-300 mb-2">Countdown to end</div>
-                <div className="flex items-center gap-4">
-                  <div className="text-3xl font-mono">{`${countdown.h.toString().padStart(2,'0')}:${countdown.m.toString().padStart(2,'0')}:${countdown.s.toString().padStart(2,'0')}`}</div>
-                  <div className="text-sm text-gray-400">({salePhase === 'live' ? 'Live now' : salePhase === 'upcoming' ? 'Upcoming' : 'Sale ended'})</div>
-                </div>
+<canvas id="matrixBG"></canvas>
 
-                <div className="mt-4 text-xs text-gray-400">End time (UTC): {info.endTime ? new Date(Number(info.endTime) * 1000).toUTCString() : '--'}</div>
-              </div>
+<div class="container">
 
-            </section>
+    <img src="A_digital_graphic_design_of_a_cryptocurrency_presa.png" class="logo" />
 
-            {/* Right: buy panel */}
-            <aside className="p-6 bg-[rgba(0,0,0,0.6)] rounded-xl border border-[#06303a]">
-              <div className="text-sm text-gray-400 mb-3">Buy PILL</div>
+    <h1>PILL PRESALE</h1>
 
-              <div className="mb-3">
-                <label className="text-xs text-gray-300">Amount (ETH)</label>
-                <input type="number" step="0.001" value={buyAmountETH} onChange={(e) => setBuyAmountETH(Number(e.target.value))} className="w-full mt-2 p-3 rounded-md bg-[#071013] text-white outline-none" />
-              </div>
+    <div id="countdown" class="countdown"></div>
 
-              <div className="mb-4 text-sm text-gray-300">You will receive approx: <span className="font-semibold">{presaleRateNum ? formatNumber(buyAmountETH * presaleRateNum) : '--'} {info.symbol ?? ''}</span></div>
+    <div class="card">
+        <div class="info">Token: PILL</div>
+        <div class="info">Preço presale: 1 ETH = 1000 PILL</div>
+        <div class="info">Taxa: 10%</div>
+        <div class="info">Supply: 1000 PILL</div>
+        <div class="info">Min Buy: 0.01 ETH</div>
+        <div class="info">Max Buy: 5 ETH</div>
 
-              <button disabled={!account || salePhase !== 'live'} onClick={buy} className={`w-full py-3 rounded-md font-semibold ${!account || salePhase !== 'live' ? 'bg-gray-600 cursor-not-allowed' : 'bg-gradient-to-r from-green-500 to-red-500 hover:from-green-600'}`}>
-                {txStatus === 'sending' || txStatus === 'pending' ? 'Processing...' : (salePhase === 'live' ? 'Buy with MetaMask' : (salePhase === 'upcoming' ? 'Sale not started' : 'Sale ended'))}
-              </button>
+        <button onclick="connect()">Conectar MetaMask</button>
+        <br/><br/>
 
-              <div className="mt-4 text-xs text-gray-400">
-                Launchpad: <span className="font-mono">{LAUNCHPAD_ADDRESS}</span>
-                <br />Token: <span className="font-mono">{TOKEN_ADDRESS}</span>
-              </div>
+        <input id="ethAmount" type="number" placeholder="ETH para comprar" style="padding:10px;font-size:16px;width:80%;border-radius:8px;"><br><br>
 
-            </aside>
-          </main>
+        <button onclick="buyToken()">Comprar Token</button>
 
-          <footer className="mt-8 text-center text-xs text-gray-500">Designed with minimal, matrix-style visuals. Use responsibly. Audit recommended before mainnet use.</footer>
-        </div>
-      </div>
-
-      {/* Inline script for matrix background - will run in browser */}
-      <MatrixScript />
     </div>
-  );
-}
 
-// Small component that injects a matrix-style canvas script
-function MatrixScript() {
-  useEffect(() => {
-    const canvas = document.getElementById('matrixCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const resize = () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; };
-    resize();
-    window.addEventListener('resize', resize);
+</div>
 
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+<script>
+    /* MATRIX BACKGROUND EFFECT */
+    const canvas = document.getElementById("matrixBG");
+    const ctx = canvas.getContext("2d");
+
+    canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth;
+
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     const fontSize = 14;
-    const columns = Math.floor(canvas.width / fontSize);
-    const drops = new Array(columns).fill(0).map(() => Math.random() * canvas.height);
+    const columns = canvas.width / fontSize;
 
-    let raf;
-    const draw = () => {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = 'rgba(34,197,94,0.9)';
-      ctx.font = fontSize + 'px monospace';
-      for (let i = 0; i < columns; i++) {
-        const text = letters.charAt(Math.floor(Math.random() * letters.length));
-        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-        drops[i] += 0.5 + Math.random() * 0.5;
-      }
-      raf = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
-  }, []);
+    const drops = [];
+    for (let i = 0; i < columns; i++) drops[i] = 1;
 
-  return null;
-}
+    function draw() {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "#00ff99";
+        ctx.font = fontSize + "px arial";
+
+        for (let i = 0; i < drops.length; i++) {
+            const text = letters.charAt(Math.floor(Math.random() * letters.length));
+            ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+            if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+
+            drops[i]++;
+        }
+    }
+
+    setInterval(draw, 33);
+
+    /* COUNTDOWN TIMER */
+    const startTime = new Date("December 10, 2025 08:00:00 GMT-3").getTime();
+    const endTime = new Date("December 10, 2025 13:00:00 GMT-3").getTime();
+
+    setInterval(() => {
+        const now = new Date().getTime();
+
+        if (now < startTime) {
+            document.getElementById("countdown").innerHTML = "Presale começa em: " + format(startTime - now);
+        } else if (now < endTime) {
+            document.getElementById("countdown").innerHTML = "Presale termina em: " + format(endTime - now);
+        } else {
+            document.getElementById("countdown").innerHTML = "Presale encerrada";
+        }
+    }, 1000);
+
+    function format(ms) {
+        const h = Math.floor(ms / (1000 * 60 * 60));
+        const m = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((ms % (1000 * 60)) / 1000);
+        return `${h}h ${m}m ${s}s`;
+    }
+
+    /* WALLET + BUY FUNCTION */
+
+    let account;
+
+    async function connect() {
+        if (!window.ethereum) {
+            alert("Instale MetaMask.");
+            return;
+        }
+        const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+        account = accounts[0];
+        alert("Conectado: " + account);
+    }
+
+    async function buyToken() {
+        if (!account) return alert("Conecte primeiro sua carteira.");
+
+        const amount = document.getElementById("ethAmount").value;
+
+        if (amount <= 0) return alert("Valor inválido.");
+
+        const contract = "0x72A9a07EC3Fdd4A58332C5ED37F6d35a72d541c9";
+
+        await ethereum.request({
+            method: "eth_sendTransaction",
+            params: [{
+                from: account,
+                to: contract,
+                value: "0x" + (BigInt(amount * 1e18)).toString(16)
+            }]
+        });
+
+        alert("Compra enviada para a blockchain.");
+    }
+</script>
+
+</body>
+</html>
