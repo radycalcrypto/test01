@@ -151,7 +151,7 @@ input::placeholder {
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
 <script>
 /* MATRIX BACKGROUND */
 const canvas=document.getElementById("matrixBG");
@@ -178,7 +178,7 @@ setInterval(draw,33);
 
 /* COUNTDOWN */
 const startTime=new Date().getTime();
-const endTime=startTime+4*60*60*1000;
+const endTime=startTime+4*60*60*1000; // 4 horas
 setInterval(()=>{
     const now=new Date().getTime();
     const countdown=document.getElementById("countdown");
@@ -213,13 +213,12 @@ const abiToken=[
 ];
 
 async function connect(){
-    if(!window.ethereum){ alert("Instale MetaMask!"); return; }
+    if(!window.ethereum){ alert("MetaMask não detectado!"); return; }
     try{
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
-
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        account = accounts[0];
         provider = new ethers.providers.Web3Provider(window.ethereum);
         signer = provider.getSigner();
-        account = await signer.getAddress();
 
         launchpadContract = new ethers.Contract(launchpadAddress, abiLaunchpad, signer);
         tokenContract = new ethers.Contract(tokenAddress, abiToken, provider);
@@ -230,6 +229,7 @@ async function connect(){
         btn.style.color = "#000";
 
         alert("Carteira conectada: " + account);
+
         updateProgress();
     }catch(err){
         console.error("Erro ao conectar MetaMask:", err);
@@ -296,4 +296,3 @@ async function updateProgress(){
 
 </body>
 </html>
- 
