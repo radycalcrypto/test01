@@ -1,363 +1,265 @@
-// Pill Launch Page - Single-file React component
-// TailwindCSS required in host app. Assumes ethers.js is available globally (imported).
-// Designed to be dropped into a React app (Vite/Create React App/Next.js) that supports Tailwind.
-// Colors: black background, neon green & red accents, matrix-style background animation.
-// Connects to Metamask, reads presale info from launchpad contract, shows dynamic price, progress, countdown, buys via buy() payable.
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
 
-import React, { useEffect, useState, useMemo } from "react";
-import { ethers } from "ethers";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-// =========================
-// CONFIG
-// =========================
-const LAUNCHPAD_ADDRESS = "0x72A9a07EC3Fdd4A58332C5ED37F6d35a72d541c9";
-const TOKEN_ADDRESS = "0xeecc2eb7645a86549321433511b61866eeb13611";
-// Minimal ABI for the launchpad contract (read-only + buy)
-const LAUNCHPAD_ABI = [
-  "function presaleRate() view returns (uint256)",
-  "function listingRate() view returns (uint256)",
-  "function totalETH() view returns (uint256)",
-  "function softCap() view returns (uint256)",
-  "function hardCap() view returns (uint256)",
-  "function minBuy() view returns (uint256)",
-  "function maxBuy() view returns (uint256)",
-  "function startTime() view returns (uint256)",
-  "function endTime() view returns (uint256)",
-  "function feePercent() view returns (uint256)",
-  "function liquidityPercent() view returns (uint256)",
-  "function contributions(address) view returns (uint256)",
-  "function buy() payable",
-];
+interface IUniswapV2Router02 {
+    function WETH() external view returns (address);
 
-const TOKEN_ABI = [
-  "function decimals() view returns (uint8)",
-  "function name() view returns (string)",
-  "function symbol() view returns (string)",
-  "function balanceOf(address) view returns (uint256)",
-];
-
-// =========================
-// Helper functions
-// =========================
-function formatEtherBig(value) {
-  try {
-    return ethers.utils.formatEther(value);
-  } catch (e) {
-    return "0";
-  }
+    function addLiquidityETH(
+        address token,
+        uint amountTokenDesired,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
 }
 
-function formatNumber(n, digits = 2) {
-  return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
-}
+contract PresaleLaunchpad is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
 
-function secondsToDHMS(seconds) {
-  seconds = Math.max(0, Math.floor(seconds));
-  const d = Math.floor(seconds / (3600 * 24));
-  const h = Math.floor((seconds % (3600 * 24)) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return { d, h, m, s };
-}
+    // --- Token e router
+    IERC20 public immutable token;
+    IUniswapV2Router02 public immutable router;
 
-// =========================
-// React component
-// =========================
-export default function PillLaunchPage() {
-  const [provider, setProvider] = useState(null);
-  const [signer, setSigner] = useState(null);
-  const [account, setAccount] = useState(null);
-  const [network, setNetwork] = useState(null);
+    // --- Parâmetros da presale
+    uint256 public presaleRate;    // tokens por 1 ETH (usar unidades token * 1 ether)
+    uint256 public listingRate;    // tokens por 1 ETH usados para calcular liquidityTokens
+    uint256 public minBuy;         // em wei
+    uint256 public maxBuy;         // em wei por carteira (0 = sem limite)
+    uint256 public softCap;        // em wei
+    uint256 public hardCap;        // em wei (0 = sem limite)
 
-  const [launchpad, setLaunchpad] = useState(null);
-  const [token, setToken] = useState(null);
+    // Percentuais inteiros (ex: 10 = 10%)
+    uint256 public feePercent = 10;       // taxa sobre totalETH enviada a feeWallet
+    uint256 public liquidityPercent;      // % do ETH (após fee) que vai para liquidity
 
-  const [info, setInfo] = useState({});
-  const [now, setNow] = useState(Math.floor(Date.now() / 1000));
+    address public feeWallet;
 
-  const [buyAmountETH, setBuyAmountETH] = useState(0.05);
-  const [txStatus, setTxStatus] = useState(null);
+    // Horários (preenchidos conforme seu pedido)
+    uint256 public startTime = 1765338600; // 2025-12-10 00:50 (UTC-3) -> UTC 2025-12-10 03:50
+    uint256 public endTime   = 1765364400; // 2025-12-10 08:00 (UTC-3) -> UTC 2025-12-10 11:00
 
-  // Connect to MetaMask
-  async function connectWallet() {
-    if (!window.ethereum) {
-      alert('MetaMask not found. Install or enable a provider.');
-      return;
+    // Estado
+    uint256 public totalETH; // total em wei recebido
+    bool public finalized;
+    bool public canceled;
+
+    mapping(address => uint256) public contributions; // em wei
+    mapping(address => bool) public claimed;
+
+    // Events
+    event Bought(address indexed buyer, uint256 amountWei);
+    event Refunded(address indexed buyer, uint256 amountWei);
+    event Claimed(address indexed buyer, uint256 amountTokens);
+    event Finalized(uint256 totalETH, uint256 feeETH, uint256 liquidityETH, uint256 liquidityTokens);
+    event LiquidityAdded(uint256 tokenAmount, uint256 ethAmount, uint256 liquidity);
+    event PresaleCanceled();
+
+    // Constructor
+    constructor(
+        address _token,
+        address _router,
+        address _feeWallet,
+        uint256 _presaleRate,
+        uint256 _listingRate,
+        uint256 _minBuy,
+        uint256 _maxBuy,
+        uint256 _softCap,
+        uint256 _hardCap,
+        uint256 _liquidityPercent
+    ) Ownable(msg.sender) {
+        require(_token != address(0), "token nulo");
+        require(_router != address(0), "router nulo");
+        require(_feeWallet != address(0), "feeWallet nulo");
+        require(_liquidityPercent <= 100, "liquidityPercent invalido");
+
+        token = IERC20(_token);
+        router = IUniswapV2Router02(_router);
+        feeWallet = _feeWallet;
+
+        presaleRate = _presaleRate;
+        listingRate = _listingRate;
+        minBuy = _minBuy;
+        maxBuy = _maxBuy;
+        softCap = _softCap;
+        hardCap = _hardCap;
+        liquidityPercent = _liquidityPercent;
     }
-    const p = new ethers.providers.Web3Provider(window.ethereum, "any");
-    await p.send("eth_requestAccounts", []);
-    const s = p.getSigner();
-    const addr = await s.getAddress();
-    const net = await p.getNetwork();
 
-    setProvider(p);
-    setSigner(s);
-    setAccount(addr);
-    setNetwork(net);
-  }
+    // -----------------------------
+    // BUY (public para permitir chamadas internas de receive/fallback)
+    // -----------------------------
+    function buy() public payable nonReentrant {
+        require(!finalized && !canceled, "presale encerrado");
+        require(block.timestamp >= startTime, "presale nao iniciou");
+        require(block.timestamp <= endTime, "presale terminou");
 
-  // Initialize contracts
-  useEffect(() => {
-    if (!provider) return;
-    const lp = new ethers.Contract(LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, provider);
-    const tk = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, provider);
-    setLaunchpad(lp);
-    setToken(tk);
-  }, [provider]);
+        require(msg.value >= minBuy, "abaixo do minBuy");
 
-  // Fetch static/dynamic info from contract
-  async function fetchInfo() {
-    if (!launchpad || !token) return;
-    try {
-      const [presaleRate, listingRate, totalETH, softCap, hardCap, minBuy, maxBuy, startTime, endTime, feePercent, liquidityPercent] = await Promise.all([
-        launchpad.presaleRate(),
-        launchpad.listingRate(),
-        launchpad.totalETH(),
-        launchpad.softCap(),
-        launchpad.hardCap(),
-        launchpad.minBuy(),
-        launchpad.maxBuy(),
-        launchpad.startTime(),
-        launchpad.endTime(),
-        launchpad.feePercent(),
-        launchpad.liquidityPercent(),
-      ]);
+        if (maxBuy > 0) {
+            require(contributions[msg.sender] + msg.value <= maxBuy, "excede maxBuy");
+        }
+        if (hardCap > 0) {
+            require(totalETH + msg.value <= hardCap, "excede hardCap");
+        }
 
-      const [decimals, name, symbol] = await Promise.all([
-        token.decimals(),
-        token.name(),
-        token.symbol(),
-      ]);
+        contributions[msg.sender] += msg.value;
+        totalETH += msg.value;
 
-      setInfo({ presaleRate, listingRate, totalETH, softCap, hardCap, minBuy, maxBuy, startTime, endTime, feePercent, liquidityPercent, decimals, name, symbol });
-    } catch (e) {
-      console.error('fetchInfo error', e);
+        emit Bought(msg.sender, msg.value);
     }
-  }
 
-  // polling clock and info
-  useEffect(() => {
-    fetchInfo();
-    const t1 = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
-    const t2 = setInterval(() => fetchInfo(), 15000); // refresh every 15s
-    return () => { clearInterval(t1); clearInterval(t2); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [launchpad, token]);
-
-  // Derived values
-  const presaleRateNum = useMemo(() => {
-    if (!info.presaleRate || !info.decimals) return 0;
-    try {
-      // presaleRate is tokens per 1 ETH with token precision multiplied by 1 ether
-      // e.g., if presaleRate = 1000 * 1e18, then tokens per ETH = 1000
-      return Number(ethers.utils.formatUnits(info.presaleRate.toString(), 18 - 0));
-    } catch (e) {
-      return 0;
+    // fallback/receive para facilidade — chamam buy()
+    receive() external payable {
+        buy();
     }
-  }, [info]);
 
-  const salePhase = useMemo(() => {
-    if (!info.startTime || !info.endTime) return 'unknown';
-    if (now < Number(info.startTime)) return 'upcoming';
-    if (now >= Number(info.startTime) && now <= Number(info.endTime)) return 'live';
-    return 'ended';
-  }, [info, now]);
-
-  const timeLeft = useMemo(() => {
-    if (!info.endTime) return 0;
-    return Math.max(0, Number(info.endTime) - now);
-  }, [info, now]);
-
-  // Progress toward softCap/hardCap
-  const progress = useMemo(() => {
-    try {
-      const total = Number(ethers.utils.formatEther(info.totalETH || 0));
-      const soft = Number(ethers.utils.formatEther(info.softCap || 0)) || 0;
-      const hard = Number(ethers.utils.formatEther(info.hardCap || 0)) || 0;
-      const pctSoft = soft > 0 ? Math.min(100, (total / soft) * 100) : 0;
-      const pctHard = hard > 0 ? Math.min(100, (total / hard) * 100) : 0;
-      return { total, soft, hard, pctSoft, pctHard };
-    } catch (e) {
-      return { total: 0, soft: 0, hard: 0, pctSoft: 0, pctHard: 0 };
+    fallback() external payable {
+        buy();
     }
-  }, [info]);
 
-  // Buy function (uses signer)
-  async function buy() {
-    if (!signer) { alert('Conecte a carteira'); return; }
-    try {
-      setTxStatus('sending');
-      const contractWithSigner = new ethers.Contract(LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, signer);
-      const value = ethers.utils.parseEther(String(buyAmountETH));
-      const tx = await contractWithSigner.buy({ value });
-      setTxStatus('pending');
-      await tx.wait();
-      setTxStatus('confirmed');
-      setBuyAmountETH(0.05);
-      fetchInfo();
-    } catch (e) {
-      console.error('buy error', e);
-      setTxStatus('error');
-      alert(e?.data?.message || e?.message || 'Erro ao enviar transacao');
+    // -----------------------------
+    // CLAIM (após finalize)
+    // -----------------------------
+    function claim() external nonReentrant {
+        require(finalized, "nao finalizado");
+        require(totalETH >= softCap, "softCap nao atingido");
+
+        uint256 contributed = contributions[msg.sender];
+        require(contributed > 0, "nenhuma contribuicao");
+
+        contributions[msg.sender] = 0;
+
+        uint256 amountTokens = (contributed * presaleRate) / 1 ether;
+        require(amountTokens > 0, "zero tokens");
+
+        token.safeTransfer(msg.sender, amountTokens);
+
+        emit Claimed(msg.sender, amountTokens);
     }
-  }
 
-  // UI pieces
-  const countdown = secondsToDHMS(timeLeft);
+    // -----------------------------
+    // REFUND (se presale acabar e softCap não alcançado)
+    // -----------------------------
+    function refund() external nonReentrant {
+        require(block.timestamp > endTime, "presale ainda ativa");
+        require(!finalized, "ja finalizado");
+        require(totalETH < softCap, "softCap atingido");
 
-  return (
-    <div className="min-h-screen text-white bg-black relative overflow-hidden font-sans">
-      {/* Matrix style animated background */}
-      <div className="absolute inset-0 pointer-events-none">
-        <canvas id="matrixCanvas" className="w-full h-full opacity-20"></canvas>
-      </div>
+        uint256 contributed = contributions[msg.sender];
+        require(contributed > 0, "nenhuma contribuicao");
 
-      <div className="relative z-10 container mx-auto px-4 py-12">
-        <div className="max-w-4xl mx-auto bg-[rgba(0,0,0,0.6)] backdrop-blur-sm rounded-2xl border border-[#0f0f0f] p-8 shadow-2xl">
-          <header className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
-              {/* Pill logo */}
-              <div className="w-14 h-14 rounded-full flex items-center justify-center bg-gradient-to-br from-green-500 to-red-500 shadow-lg">
-                <svg viewBox="0 0 64 64" className="w-10 h-10 drop-shadow-md">
-                  <defs>
-                    <linearGradient id="g1" x1="0%" x2="100%" y1="0%" y2="100%">
-                      <stop offset="0%" stopColor="#22c55e" />
-                      <stop offset="100%" stopColor="#ef4444" />
-                    </linearGradient>
-                  </defs>
-                  <rect x="6" y="20" width="52" height="24" rx="12" fill="url(#g1)" />
-                  <circle cx="22" cy="32" r="10" fill="#071013" />
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">Pill test — Fair Launch</h1>
-                <p className="text-sm text-gray-300">Token: PILL • Launchpad minimalista</p>
-              </div>
-            </div>
+        contributions[msg.sender] = 0;
+        payable(msg.sender).transfer(contributed);
 
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <div className="text-xs text-gray-400">Connected</div>
-                <div className="text-sm font-mono">{account ? `${account.slice(0,6)}...${account.slice(-4)}` : 'Not connected'}</div>
-              </div>
-              <button onClick={() => account ? (setAccount(null), setProvider(null)) : connectWallet()} className="px-4 py-2 rounded-md bg-[#0f172a] border border-[#064e3b] hover:bg-[#06121a]">
-                {account ? 'Disconnect' : 'Connect Wallet'}
-              </button>
-            </div>
-          </header>
+        emit Refunded(msg.sender, contributed);
+    }
 
-          <main className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Left: sale info */}
-            <section className="md:col-span-2 bg-[rgba(255,255,255,0.02)] p-6 rounded-xl border border-[#06303a]">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold">Sale Status</h2>
-                  <div className="text-sm text-gray-300">{salePhase === 'upcoming' ? 'Upcoming' : salePhase === 'live' ? 'Live' : 'Ended'}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-gray-400">Fee</div>
-                  <div className="text-sm">{info.feePercent ?? '--'}%</div>
-                </div>
-              </div>
+    // -----------------------------
+    // FINALIZE (apenas owner, depois do endTime e se softCap alcançado)
+    // -----------------------------
+    function finalize() external onlyOwner nonReentrant {
+        require(block.timestamp > endTime, "presale ainda ativa");
+        require(!finalized, "ja finalizado");
+        require(!canceled, "cancelado");
+        require(totalETH >= softCap, "softCap nao atingido");
 
-              <div className="mb-4">
-                <div className="w-full bg-[#04110b] rounded-full h-4 overflow-hidden">
-                  <div style={{ width: `${progress.pctHard}%` }} className={`h-4 rounded-full ${progress.pctHard >= 100 ? 'bg-red-600' : 'bg-green-500'}`}></div>
-                </div>
-                <div className="mt-2 text-xs text-gray-400 flex justify-between">
-                  <div>Raised: {formatNumber(progress.total)} ETH</div>
-                  <div>SoftCap: {formatNumber(progress.soft)} ETH</div>
-                </div>
-              </div>
+        finalized = true;
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-[rgba(0,0,0,0.35)] rounded-md">
-                  <div className="text-xs text-gray-400">Price (presale)</div>
-                  <div className="text-xl font-semibold">{presaleRateNum ? `${formatNumber(presaleRateNum)} ${info.symbol ?? ''} / ETH` : '--'}</div>
-                </div>
-                <div className="p-4 bg-[rgba(0,0,0,0.35)] rounded-md">
-                  <div className="text-xs text-gray-400">Min / Max Buy</div>
-                  <div className="text-lg">{info.minBuy ? `${formatNumber(ethers.utils.formatEther(info.minBuy))} / ${info.maxBuy ? formatNumber(ethers.utils.formatEther(info.maxBuy)) : 'No limit'} ETH` : '--'}</div>
-                </div>
-              </div>
+        uint256 feeETH = (totalETH * feePercent) / 100;
+        if (feeETH > 0) {
+            payable(feeWallet).transfer(feeETH);
+        }
 
-              <div className="mt-6 p-4 bg-gradient-to-b from-black/50 to-black/20 rounded-md border border-[#06303a]">
-                <div className="text-sm text-gray-300 mb-2">Countdown to end</div>
-                <div className="flex items-center gap-4">
-                  <div className="text-3xl font-mono">{`${countdown.h.toString().padStart(2,'0')}:${countdown.m.toString().padStart(2,'0')}:${countdown.s.toString().padStart(2,'0')}`}</div>
-                  <div className="text-sm text-gray-400">({salePhase === 'live' ? 'Live now' : salePhase === 'upcoming' ? 'Upcoming' : 'Sale ended'})</div>
-                </div>
+        uint256 ethAfterFee = totalETH - feeETH;
+        uint256 liquidityETH = (ethAfterFee * liquidityPercent) / 100;
 
-                <div className="mt-4 text-xs text-gray-400">End time (UTC): {info.endTime ? new Date(Number(info.endTime) * 1000).toUTCString() : '--'}</div>
-              </div>
+        uint256 totalTokensForSale = (totalETH * presaleRate) / 1 ether;
+        uint256 liquidityTokens = (liquidityETH * listingRate) / 1 ether;
 
-            </section>
+        uint256 neededTokens = totalTokensForSale + liquidityTokens;
 
-            {/* Right: buy panel */}
-            <aside className="p-6 bg-[rgba(0,0,0,0.6)] rounded-xl border border-[#06303a]">
-              <div className="text-sm text-gray-400 mb-3">Buy PILL</div>
+        // owner deve ter aprovado launchpad para gastar neededTokens
+        token.safeTransferFrom(owner(), address(this), neededTokens);
 
-              <div className="mb-3">
-                <label className="text-xs text-gray-300">Amount (ETH)</label>
-                <input type="number" step="0.001" value={buyAmountETH} onChange={(e) => setBuyAmountETH(Number(e.target.value))} className="w-full mt-2 p-3 rounded-md bg-[#071013] text-white outline-none" />
-              </div>
+        if (liquidityETH > 0 && liquidityTokens > 0) {
+            token.safeIncreaseAllowance(address(router), liquidityTokens);
 
-              <div className="mb-4 text-sm text-gray-300">You will receive approx: <span className="font-semibold">{presaleRateNum ? formatNumber(buyAmountETH * presaleRateNum) : '--'} {info.symbol ?? ''}</span></div>
+            (uint amountToken, uint amountETH, uint liquidity) = router.addLiquidityETH{value: liquidityETH}(
+                address(token),
+                liquidityTokens,
+                0,
+                0,
+                owner(),
+                block.timestamp + 3600
+            );
 
-              <button disabled={!account || salePhase !== 'live'} onClick={buy} className={`w-full py-3 rounded-md font-semibold ${!account || salePhase !== 'live' ? 'bg-gray-600 cursor-not-allowed' : 'bg-gradient-to-r from-green-500 to-red-500 hover:from-green-600'}`}>
-                {txStatus === 'sending' || txStatus === 'pending' ? 'Processing...' : (salePhase === 'live' ? 'Buy with MetaMask' : (salePhase === 'upcoming' ? 'Sale not started' : 'Sale ended'))}
-              </button>
+            emit LiquidityAdded(amountToken, amountETH, liquidity);
+        }
 
-              <div className="mt-4 text-xs text-gray-400">
-                Launchpad: <span className="font-mono">{LAUNCHPAD_ADDRESS}</span>
-                <br />Token: <span className="font-mono">{TOKEN_ADDRESS}</span>
-              </div>
+        uint256 remainingETH = address(this).balance;
+        if (remainingETH > 0) {
+            payable(owner()).transfer(remainingETH);
+        }
 
-            </aside>
-          </main>
+        emit Finalized(totalETH, feeETH, liquidityETH, liquidityTokens);
+    }
 
-          <footer className="mt-8 text-center text-xs text-gray-500">Designed with minimal, matrix-style visuals. Use responsibly. Audit recommended before mainnet use.</footer>
-        </div>
-      </div>
+    // -----------------------------
+    // CANCELAR PRESALE (admin)
+    // -----------------------------
+    function cancelPresale() external onlyOwner {
+        require(!finalized, "ja finalizado");
+        canceled = true;
+        emit PresaleCanceled();
+    }
 
-      {/* Inline script for matrix background - will run in browser */}
-      <MatrixScript />
-    </div>
-  );
-}
+    // -----------------------------
+    // FUNÇÕES ADMINISTRATIVAS
+    // -----------------------------
+    function setFeePercent(uint256 _feePercent) external onlyOwner {
+        require(_feePercent <= 25, "fee > 25%");
+        feePercent = _feePercent;
+    }
 
-// Small component that injects a matrix-style canvas script
-function MatrixScript() {
-  useEffect(() => {
-    const canvas = document.getElementById('matrixCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const resize = () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; };
-    resize();
-    window.addEventListener('resize', resize);
+    function setFeeWallet(address _feeWallet) external onlyOwner {
+        require(_feeWallet != address(0), "feeWallet nulo");
+        feeWallet = _feeWallet;
+    }
 
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const fontSize = 14;
-    const columns = Math.floor(canvas.width / fontSize);
-    const drops = new Array(columns).fill(0).map(() => Math.random() * canvas.height);
+    function setLiquidityPercent(uint256 _liquidityPercent) external onlyOwner {
+        require(_liquidityPercent <= 100, "liquidity > 100");
+        liquidityPercent = _liquidityPercent;
+    }
 
-    let raf;
-    const draw = () => {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = 'rgba(34,197,94,0.9)';
-      ctx.font = fontSize + 'px monospace';
-      for (let i = 0; i < columns; i++) {
-        const text = letters.charAt(Math.floor(Math.random() * letters.length));
-        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-        drops[i] += 0.5 + Math.random() * 0.5;
-      }
-      raf = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
-  }, []);
+    function updateRatesAndCaps(
+        uint256 _presaleRate,
+        uint256 _listingRate,
+        uint256 _minBuy,
+        uint256 _maxBuy,
+        uint256 _softCap,
+        uint256 _hardCap
+    ) external onlyOwner {
+        require(block.timestamp < startTime, "nao pode alterar apos inicio");
+        presaleRate = _presaleRate;
+        listingRate = _listingRate;
+        minBuy = _minBuy;
+        maxBuy = _maxBuy;
+        softCap = _softCap;
+        hardCap = _hardCap;
+    }
 
-  return null;
+    function rescueTokens(address _token, uint256 _amount) external onlyOwner {
+        IERC20(_token).safeTransfer(owner(), _amount);
+    }
+
+    function rescueETH(uint256 _amount) external onlyOwner {
+        require(finalized || canceled, "somente apos finalize/cancel");
+        payable(owner()).transfer(_amount);
+    }
 }
