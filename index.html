@@ -13,21 +13,43 @@ body, html {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Consolas', 'Courier New', monospace; 
+    font-family: 'Consolas', 'Courier New', monospace; /* Fonte tech/cyberpunk */
     color: #00ffaa; /* Neon Verde/Ciano */
     background-color: #0d0d0d;
     overflow-x: hidden;
 }
 
-/* Efeito Matrix Background - AGORA FEITO COM CANVAS PARA CÓDIGO CAINDO REAL */
-#matrixCanvas {
+/* Efeito Matrix Background */
+.matrix-bg {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
     z-index: -1;
-    opacity: 0.2; /* Suave, para não ofuscar a dashboard */
+    overflow: hidden;
+    opacity: 0.1; /* Suave, não ofusca */
+}
+.matrix-bg::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 200%; 
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 1px,
+        #00ffaa33 1px, /* Linhas finas neon */
+        #00ffaa33 2px
+    );
+    animation: scrollMatrix 60s linear infinite;
+}
+
+@keyframes scrollMatrix {
+    from { transform: translateY(0); }
+    to { transform: translateY(-50%); }
 }
 
 /* Layout Principal - Dashboard Clean */
@@ -36,7 +58,7 @@ body, html {
     margin: 60px auto;
     padding: 30px;
     border-radius: 12px;
-    background: rgba(0, 0, 0, 0.85); /* Fundo mais escuro para destaque */
+    background: rgba(0, 0, 0, 0.7);
     border: 1px solid #00ffaa33; 
     box-shadow: 0 0 15px #00ffaa44, 0 0 50px #00ffaa11;
     text-align: center;
@@ -79,6 +101,7 @@ button {
     font-size: 1em;
     font-weight: bold;
     cursor: pointer;
+    /* Neon Verde/Ciano */
     background: linear-gradient(45deg, #00ffaa, #00ffff);
     color: #0d0d0d;
     transition: all 0.3s ease-in-out;
@@ -90,7 +113,7 @@ button#connectBtn {
 }
 
 button:hover:not(:disabled) {
-    background: linear-gradient(45deg, #ff0077, #ff3399); 
+    background: linear-gradient(45deg, #ff0077, #ff3399); /* Pílula Vermelha */
     color: white;
     transform: translateY(-2px);
     box-shadow: 0 6px 15px rgba(255, 0, 119, 0.6);
@@ -162,7 +185,7 @@ input:focus {
 }
 .progressBox {
     width: 100%;
-    height: 15px; 
+    height: 15px; /* Mais fino para ser minimalista */
     background: #333;
     border-radius: 8px;
     overflow: hidden;
@@ -221,7 +244,8 @@ input:focus {
 </head>
 <body>
 
-<canvas id="matrixCanvas"></canvas>
+
+<div class="matrix-bg"></div>
 
 <div class="container">
     <h1>PILL Presale</h1>
@@ -254,68 +278,6 @@ input:focus {
 </div>
 
 <script>
-// --- NOVO CÓDIGO PARA O EFEITO MATRIX NO CANVAS ---
-function initMatrixEffect() {
-    const canvas = document.getElementById('matrixCanvas');
-    const ctx = canvas.getContext('2d');
-    
-    let W = window.innerWidth;
-    let H = window.innerHeight;
-    canvas.width = W;
-    canvas.height = H;
-    
-    window.addEventListener('resize', () => {
-        W = window.innerWidth;
-        H = window.innerHeight;
-        canvas.width = W;
-        canvas.height = H;
-        columns = Math.floor(W / fontSize);
-        drops = [];
-        for (let i = 0; i < columns; i++) {
-            drops[i] = 1;
-        }
-    });
-
-    // Caracteres estilo Cyberpunk/Matrix
-    const characters = 'アァカサタナハマヤラワガザダバパビギジヂズヅエオイウケセテネヘメヨルヱヲグゼデベペホモャュョッABCDEF0123456789';
-    const fontSize = 16;
-    let columns = Math.floor(W / fontSize);
-    let drops = [];
-    
-    // Inicializa as gotículas na parte superior
-    for (let i = 0; i < columns; i++) {
-        drops[i] = 1;
-    }
-
-    function draw() {
-        // Fundo semi-transparente para o efeito de rastro
-        ctx.fillStyle = 'rgba(13, 13, 13, 0.05)';
-        ctx.fillRect(0, 0, W, H);
-
-        ctx.fillStyle = '#00ffaa'; // Cor Neon Cyberpunk
-        ctx.font = `${fontSize}px Consolas`;
-
-        for (let i = 0; i < drops.length; i++) {
-            const text = characters[Math.floor(Math.random() * characters.length)];
-            const x = i * fontSize;
-            const y = drops[i] * fontSize;
-
-            // Desenha o caractere
-            ctx.fillText(text, x, y);
-
-            // Move a gota para baixo ou reinicia no topo
-            if (y > H && Math.random() > 0.975) {
-                drops[i] = 0; // Volta ao topo
-            }
-            drops[i]++; // Move para baixo
-        }
-    }
-
-    // Taxa de quadros para o efeito Matrix
-    setInterval(draw, 50); 
-}
-
-// --- CÓDIGO DA DAPP (Lógica de Conexão e Contrato) ---
 function initDApp() {
     // Desestruturação do Ethers v6
     const { BrowserProvider, Contract, parseEther, formatEther, formatUnits } = ethers;
@@ -325,6 +287,7 @@ function initDApp() {
     // ENDEREÇO DO SEU CONTRATO DEPLOYADO NA SEPOLIA (MANTER O SEU ENDEREÇO)
     const presaleAddress = "0x6b4cd06f01E2840525cBef2962Bce688fa5D6f04"; 
     
+    // ABI COMPLETA (Assegure-se de que o seu contrato tem essas funções)
     const abiPresale = [
         "function buyTokens() payable",
         "function tokensSold() view returns(uint256)",
@@ -354,17 +317,21 @@ function initDApp() {
         marketCapProgressText: document.getElementById("marketCapProgressText"),
     };
 
+    // Chain ID da rede Sepolia (11155111)
     const requiredChainId = BigInt(11155111);
 
     // --- PARÂMETROS DE CÁLCULO (CORRIGIDOS) ---
-    const ETH_TO_USD_RATE = 2000; 
-    const MARKET_CAP_GOAL_USD = 500; 
-    const USER_EXPECTED_TOKEN_PRICE_ETH = 0.0003; 
+    const ETH_TO_USD_RATE = 2000; // Cotação estimada do ETH em USD
+    const MARKET_CAP_GOAL_USD = 500; // Market Cap Alvo: $500 USD (CORRIGIDO)
+    const USER_EXPECTED_TOKEN_PRICE_ETH = 0.0003; // Preço do Token (0.0003 ETH)
+    
+    // Total de Tokens Disponíveis na Presale (1000 Tokens) - AJUSTE MANUAL CONFORME SEU CONTRATO
     const TOTAL_TOKENS_AVAILABLE = 1000; 
     
+    // Configuração do Cronômetro: 4 horas
     const PRESALE_DURATION_MS = 4 * 60 * 60 * 1000; 
     const PRESALE_START_TIME = Date.now(); 
-    // ------------------------------------------
+    // --------------------------------------------------------------------------
 
 
     function setStatus(message, isError = false) {
@@ -426,6 +393,7 @@ function initDApp() {
             
             presaleContract = new Contract(presaleAddress, abiPresale, signer);
 
+            // Atualiza a UI para estado conectado
             elements.connectBtn.innerText = `Conectado: ${account.substring(0,6)}...${account.slice(-4)}`;
             elements.connectBtn.style.background = "#00ffaa";
             elements.connectBtn.disabled = true;
@@ -433,6 +401,7 @@ function initDApp() {
 
             updateUI(); 
 
+            // Escuta por mudanças de conta/rede
             window.ethereum.on('accountsChanged', () => location.reload());
             window.ethereum.on('chainChanged', () => location.reload());
 
@@ -447,6 +416,7 @@ function initDApp() {
     }
 
 
+    // 2. Atualizar UI (Lê dados do contrato)
     async function updateUI() {
         if (!presaleContract) return;
 
@@ -463,5 +433,123 @@ function initDApp() {
             
             // --- Cálculos CORRIGIDOS ---
             const marketCapCurrentUSD = (totalRaisedETHFormatted * ETH_TO_USD_RATE);
+
+            // CÁLCULO DE TOKENS RESTANTES (Baseado no total fixo de 1000 tokens)
             const tokensRemaining = TOTAL_TOKENS_AVAILABLE - soldTokensFormatted;
             const tokensRemainingFormatted = Math.max(0, tokensRemaining);
+            
+
+            // PROGRESO DA PRESALE (Total Arrecadado vs. Max Cap do contrato)
+            const presalePctRecalculated = (totalRaisedETHFormatted / maxCapETHFormatted) * 100;
+            const finalPresalePct = Math.min(presalePctRecalculated, 100); 
+
+            // PROGRESO DO MARKET CAP ALVO (Current USD vs. Target USD)
+            const marketCapProgressPct = (marketCapCurrentUSD / MARKET_CAP_GOAL_USD) * 100;
+
+
+            // --- Exibição ---
+            if (elements.priceDisplay) elements.priceDisplay.innerText = `${USER_EXPECTED_TOKEN_PRICE_ETH.toFixed(8)} ETH`;
+            
+            // Verificação de Market Cap: Se o Market Cap Alvo for atingido, a porcentagem deve ser 100%
+            const marketCapLabelText = `$${marketCapCurrentUSD.toFixed(2)} / $${MARKET_CAP_GOAL_USD.toFixed(2)} USD`;
+            const presaleLabelText = `${totalRaisedETHFormatted.toFixed(4)} / ${maxCapETHFormatted.toFixed(4)} ETH`;
+
+
+            if (elements.tokensSoldDisplay) elements.tokensSoldDisplay.innerText = soldTokensFormatted.toFixed(2);
+            if (elements.tokensRemainingDisplay) elements.tokensRemainingDisplay.innerText = tokensRemainingFormatted.toFixed(2);
+            if (elements.marketCapDisplay) elements.marketCapDisplay.innerText = `$${marketCapCurrentUSD.toFixed(2)} USD`;
+            if (elements.totalRaisedETHDisplay) elements.totalRaisedETHDisplay.innerText = `${totalRaisedETHFormatted.toFixed(4)} ETH`;
+
+            // --- Progresso da Presale (Barra 1) ---
+            if (elements.presaleProgressFill) elements.presaleProgressFill.style.width = finalPresalePct + "%";
+            if (elements.presaleProgressLabel) elements.presaleProgressLabel.innerText = presaleLabelText;
+            if (elements.presaleProgressText) elements.presaleProgressText.innerText = `${finalPresalePct.toFixed(2)}%`;
+
+
+            // --- Progresso do Market Cap Alvo (Barra 2) ---
+            if (elements.marketCapProgressFill) elements.marketCapProgressFill.style.width = Math.min(marketCapProgressPct, 100) + "%";
+            if (elements.marketCapProgressLabel) elements.marketCapProgressLabel.innerText = marketCapLabelText;
+            if (elements.marketCapProgressText) elements.marketCapProgressText.innerText = `${marketCapProgressPct.toFixed(2)}%`;
+
+
+            // --- Verificação de Estado ---
+            if (!elements.buyBtn) return;
+
+            if (!isActive || finalPresalePct >= 100) {
+                setStatus("Presale Finalizada (Cap atingido)!", true);
+                elements.buyBtn.disabled = true;
+                elements.buyBtn.innerText = "Finalizado";
+            } else {
+                setStatus(`Conectado à Sepolia. Progresso: ${finalPresalePct.toFixed(2)}%`, false);
+                elements.buyBtn.disabled = false;
+                elements.buyBtn.innerText = "Comprar PILL";
+            }
+
+        } catch(err){
+            console.error("Erro ao atualizar UI/ler contrato:", err);
+            // Melhorando a mensagem de erro para o usuário:
+            let displayError = "Erro ao ler dados do contrato! Verifique o Endereço ou a ABI.";
+            if (err.message && err.message.includes('totalRaisedETH')) {
+                 displayError = "Erro de ABI: A função 'totalRaisedETH' não foi encontrada. Atualize a ABI do contrato!";
+            }
+            setStatus(displayError, true);
+        }
+    }
+
+    // 3. Comprar tokens (Envia transação)
+    async function buyTokens() {
+        if (!signer) return setStatus("Conecte a MetaMask primeiro.", true);
+        
+        const ethAmount = elements.ethAmountInput.value;
+        if (!ethAmount || parseFloat(ethAmount) <= 0) return setStatus("Insira um valor válido de ETH.", true);
+
+        try {
+            setStatus("Aguardando confirmação na MetaMask...", false);
+            
+            const valueToSend = parseEther(ethAmount);
+
+            const tx = await presaleContract.buyTokens({ value: valueToSend });
+            
+            setStatus(`Transação enviada: ${tx.hash.substring(0, 10)}... Aguardando mineração.`, false);
+            
+            await tx.wait(); 
+            
+            setStatus("Compra de tokens confirmada com sucesso! Atualizando dados...", false);
+            updateUI(); 
+
+        } catch(err) {
+            console.error("Erro na compra:", err);
+
+            let errorMsg = "Erro ao comprar tokens. Verifique o console.";
+            if (err.reason) {
+                errorMsg = `Transação Revertida: ${err.reason}`;
+            } else if (err.code === 4001) {
+                errorMsg = "Transação rejeitada pelo usuário na MetaMask.";
+            }
+            setStatus(errorMsg, true);
+        }
+    }
+
+    // Inicializa os event listeners
+    if (elements.connectBtn) elements.connectBtn.addEventListener("click", connectWallet);
+    if (elements.buyBtn) elements.buyBtn.addEventListener("click", buyTokens);
+
+    // Inicia o cronômetro
+    updateTimer();
+    setInterval(updateTimer, 1000); // Atualiza o cronômetro a cada segundo
+
+    // Atualiza UI a cada 10 segundos
+    setInterval(() => {
+        if (presaleContract) {
+            updateUI();
+        }
+    }, 10000);
+}
+
+// Chama initDApp quando a janela estiver totalmente carregada
+window.addEventListener('load', initDApp);
+
+</script>
+
+</body>
+</html>
