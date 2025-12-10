@@ -215,20 +215,25 @@ const abiToken=[
 async function connect(){
     if(!window.ethereum){ alert("Instale MetaMask!"); return; }
     try{
-        provider=new ethers.providers.Web3Provider(window.ethereum);
-        await provider.send("eth_requestAccounts",[]);
-        signer=provider.getSigner();
-        account=await signer.getAddress();
-        launchpadContract=new ethers.Contract(launchpadAddress,abiLaunchpad,signer);
-        tokenContract=new ethers.Contract(tokenAddress,abiToken,provider);
-        document.getElementById("connectBtn").innerText="Conectado";
-        document.getElementById("connectBtn").style.background="#00ffaa";
-        document.getElementById("connectBtn").style.color="#000";
-        alert("Conectado: "+account);
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        signer = provider.getSigner();
+        account = await signer.getAddress();
+
+        launchpadContract = new ethers.Contract(launchpadAddress, abiLaunchpad, signer);
+        tokenContract = new ethers.Contract(tokenAddress, abiToken, provider);
+
+        const btn = document.getElementById("connectBtn");
+        btn.innerText = "Conectado";
+        btn.style.background = "#00ffaa";
+        btn.style.color = "#000";
+
+        alert("Carteira conectada: " + account);
         updateProgress();
     }catch(err){
-        console.error(err);
-        alert("Falha ao conectar MetaMask!");
+        console.error("Erro ao conectar MetaMask:", err);
+        alert("Falha ao conectar MetaMask! Veja console para detalhes.");
     }
 }
 
@@ -239,7 +244,7 @@ async function buyToken(){
 
     let valueETH = 0;
     const progressPercent=parseFloat(document.getElementById("progressBar").style.width)||0;
-    const currentPrice=0.001*(1+progressPercent/100); // preço dinâmico simples
+    const currentPrice=0.001*(1+progressPercent/100);
 
     if(tokenAmount>0) valueETH=tokenAmount*currentPrice;
     else valueETH=ethAmount;
@@ -275,15 +280,20 @@ async function claimToken(){
 
 async function updateProgress(){
     if(!launchpadContract) return;
-    const sold=await launchpadContract.userTokens(account);
-    const progress=await launchpadContract.progress();
-    document.getElementById("soldAmount").innerText=`Tokens vendidos: ${sold} PILL`;
-    document.getElementById("progressBar").style.width=`${progress}%`;
-    const totalRaised=await launchpadContract.totalRaised();
-    document.getElementById("marketCap").innerText=`Market Cap estimado: ${ethers.utils.formatEther(totalRaised*1000)} ETH`;
-    document.getElementById("tokenPrice").innerText=`Preço atual: ~${(0.001*(progress/100+1)).toFixed(5)} ETH`;
+    try{
+        const sold=await launchpadContract.userTokens(account);
+        const progress=await launchpadContract.progress();
+        document.getElementById("soldAmount").innerText=`Tokens vendidos: ${sold} PILL`;
+        document.getElementById("progressBar").style.width=`${progress}%`;
+        const totalRaised=await launchpadContract.totalRaised();
+        document.getElementById("marketCap").innerText=`Market Cap estimado: ${ethers.utils.formatEther(totalRaised*1000)} ETH`;
+        document.getElementById("tokenPrice").innerText=`Preço atual: ~${(0.001*(progress/100+1)).toFixed(5)} ETH`;
+    }catch(err){
+        console.error(err);
+    }
 }
 </script>
 
 </body>
 </html>
+ 
