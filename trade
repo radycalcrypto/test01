@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carteira Trader - Dashboard Dinâmico</title>
+    <style>
+        /* Variáveis de Cores */
+        :root {
+            --bg-color: #121212;
+            --text-color: #E0E0E0;
+            --card-bg: #1F1F1F;
+            --accent-green: #00C853;
+            --accent-red: #D50000;
+            --border-color: #333333;
+        }
+
+        /* CSS Minimalista */
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Arial', sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); line-height: 1.6; padding: 20px; }
+        main { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; padding: 40px 0; border-bottom: 1px solid var(--border-color); margin-bottom: 30px; }
+        .header h1 { font-size: 2.5em; font-weight: 300; }
+        .header p { color: #999; }
+        .kpi-grid { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 40px; }
+        .kpi-card { flex: 1; background-color: var(--card-bg); padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+        .kpi-label { display: block; font-size: 0.8em; color: #999; margin-bottom: 5px; }
+        .kpi-value { font-size: 2.2em; font-weight: bold; }
+        h2 { font-size: 1.8em; font-weight: 400; margin-bottom: 15px; color: var(--text-color); border-left: 4px solid var(--accent-green); padding-left: 10px; }
+        .table-section { background-color: var(--card-bg); padding: 25px; border-radius: 8px; margin-bottom: 40px; }
+        #trades-table { width: 100%; border-collapse: collapse; text-align: left; }
+        #trades-table th, #trades-table td { padding: 12px 15px; border-bottom: 1px solid var(--border-color); }
+        #trades-table th { font-weight: 600; font-size: 0.9em; text-transform: uppercase; color: #A0A0A0; }
+        .profit-positive { color: var(--accent-green); font-weight: bold; }
+        .profit-negative { color: var(--accent-red); font-weight: bold; }
+        .kpi-pnl .kpi-value.positive { color: var(--accent-green); }
+        .kpi-pnl .kpi-value.negative { color: var(--accent-red); }
+        .loading-message { text-align: center; color: #999; padding: 50px; }
+        .chart-placeholder {
+            height: 250px;
+            background-color: #151515;
+            padding: 20px;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <h1>CARTEIRA TRADER - 2025</h1>
+        <p>Dashboard Dinâmico (Atualizado da Planilha)</p>
+    </header>
+
+    <main>
+        <section class="kpi-grid">
+            <div class="kpi-card" id="kpi-trades">
+                <span class="kpi-label">ENTRADAS TOTAIS</span>
+                <span class="kpi-value">...</span>
+            </div>
+            <div class="kpi-card kpi-pnl" id="kpi-pnl">
+                <span class="kpi-label">P&L TOTAL (ACUMULADO)</span>
+                <span class="kpi-value">...</span>
+            </div>
+            <div class="kpi-card" id="kpi-winrate">
+                <span class="kpi-label">TAXA DE ACERTO (R-TK)</span>
+                <span class="kpi-value">...</span>
+            </div>
+            <div class="kpi-card" id="kpi-avgprofit">
+                <span class="kpi-label">MÉDIA DE PROFIT (%)</span>
+                <span class="kpi-value">...</span>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <h2>Crescimento do Capital (%)</h2>
+            <div class="chart-placeholder">
+                <div class="loading-message">Gráfico não implementado neste código simples. Para o gráfico real, use Chart.js.</div>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <h2>Trades Recentes</h2>
+            <div id="loading-table" class="loading-message">Carregando trades da planilha...</div>
+            <table id="trades-table" style="display:none;">
+                <thead>
+                    <tr>
+                        <th>DATA FECH.</th>
+                        <th>SINAL</th>
+                        <th>R-TK (%)</th>
+                        <th>PROFIT (%)</th>
+                        <th>P.TOTAL (%)</th>
+                        <th>STATUS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    </tbody>
+            </table>
+        </section>
+    </main>
+
+    <script>
+        // =======================================================
+        // CONFIGURAÇÃO DINÂMICA DA PLANILHA (JÁ CONFIGURADA)
+        // =======================================================
+        
+        const SHEET_ID = '1_Jhny7t9Vg2v6bYYNnrEvECjHtvhC_5DqFz1jQ9F3gY'; 
+        const GID = '1138871219'; 
+
+        const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+
+        // =======================================================
+        // FUNÇÕES AUXILIARES DE FORMATAÇÃO E CÁLCULO
+        // =======================================================
+        
+        // Formata números para porcentagem (ex: 0.28812 -> +28.81%)
+        const formatPct = (value) => {
+            if (isNaN(value) || value === null) return 'N/A';
+            const sign = value >= 0 ? '+' : '';
+            return sign + (value * 100).toFixed(2) + '%';
+        };
+
+        // Encontra o índice da coluna pelo nome no cabeçalho
+        const findColumnIndex = (headers, name) => headers.findIndex(h => h.trim().toUpperCase().includes(name));
+
+        // Limpeza e conversão de valores (Trata vírgulas, % e aspas)
+        const cleanAndParse = (value) => {
+            if (!value) return 0;
+            
+            // 1. Limpa aspas e espaço
+            let cleaned = value.trim().replace(/"/g, '').replace(' ', ''); 
+            
+            // 2. Converte vírgula para ponto (padrão brasileiro -> americano)
+            cleaned = cleaned.replace(/,/g, '.');
+            
+            // 3. Remove o símbolo de porcentagem
+            cleaned = cleaned.replace('%', '');
+
+            let number = parseFloat(cleaned);
+            if (isNaN(number)) return 0;
+
+            // Se o valor na planilha já é um decimal (0.9185), essa divisão não deve ocorrer.
+            // Para dados em Planilhas: Se o valor lido é '91.85', dividimos por 100.
+            // Se o valor é lido como '0.91', não dividimos.
+            // Vamos testar se o valor é maior que 1 (indicando que é um percentual inteiro)
+            if (number > 1 && number < 1000) { // Limite razoável para evitar erros em datas grandes
+                return number / 100;
+            }
+            return number;
+        };
+
+
+        // =======================================================
+        // 3. BUSCA DOS DADOS E PROCESSAMENTO
+        // =======================================================
+        
+        async function fetchAndProcessData() {
+            try {
+                const response = await fetch(SHEET_URL);
+                if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
+                
+                const csvText = await response.text();
+                // Separa as linhas. Usa regex para garantir que \r seja tratado (Windows/Linux)
+                const rows = csvText.split(/\r?\n/);
+                
+                if (rows.length <= 1) throw new Error("Planilha vazia ou erro na leitura do cabeçalho.");
+                
+                // Limpa e mapeia cabeçalhos (assume que a primeira linha é o cabeçalho)
+                const headers = rows[0].split(',').map(h => h.trim().replace(/"/g, ''));
+                
+                // Mapeamento das colunas necessárias (baseado na sua planilha)
+                const idxDate = findColumnIndex(headers, 'D. CLOSED');
+                const idxSignal = findColumnIndex(headers, 'SINAL');
+                const idxRtk = findColumnIndex(headers, 'R-TK');
+                const idxProfit = findColumnIndex(headers, 'PROFIT');
+                const idxPnl = findColumnIndex(headers, 'P.TOTAL');
+                const idxStatus = findColumnIndex(headers, 'STATUS TRADING');
+                
+                if (idxPnl === -1) throw new Error("Coluna P.TOTAL não encontrada no cabeçalho. Verifique o nome da coluna.");
+
+
+                // Pular a linha do cabeçalho e processar os dados
+                const tradeData = rows.slice(1)
+                    .map(row => {
+                        // Split que ignora vírgulas dentro de aspas (CSV padrão)
+                        const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/); 
+                        
+                        // Validação para evitar erros de índice
+                        if (cols.length <= Math.max(idxDate, idxSignal, idxRtk, idxProfit, idxPnl, idxStatus)) {
+                             return null; // Linha incompleta
+                        }
+
+                        return {
+                            date: cols[idxDate] ? cols[idxDate].trim().replace(/"/g, '') : '',
+                            signal: cols[idxSignal] ? cols[idxSignal].trim().replace(/"/g, '') : '',
+                            rtk: cleanAndParse(cols[idxRtk] || 0),
+                            profit: cleanAndParse(cols[idxProfit] || 0),
+                            pnl: cleanAndParse(cols[idxPnl] || 0),
+                            status: cols[idxStatus] ? cols[idxStatus].trim().replace(/"/g, '') : '',
+                        };
+                    })
+                    .filter(trade => trade && trade.date); // Ignora linhas nulas ou sem data
+
+                // Inserir os dados no HTML
+                if (tradeData.length > 0) {
+                    renderKPIs(tradeData);
+                    renderTable(tradeData);
+                } else {
+                    document.getElementById('loading-table').textContent = "Nenhum trade encontrado na planilha (ou erro de formatação).";
+                }
+
+            } catch (error) {
+                console.error("Erro ao buscar dados da planilha:", error);
+                document.getElementById('loading-table').textContent = `Falha ao carregar dados. Verifique o link/permissões da planilha. Detalhe: ${error.message}`;
+            } finally {
+                document.getElementById('loading-table').style.display = 'none';
+                document.getElementById('trades-table').style.display = 'table';
+            }
+        }
+
+        // =======================================================
+        // 4. RENDERING (Exibição dos Dados)
+        // =======================================================
+
+        function calculateKPIs(data) {
+            const totalTrades = data.length;
+            // P.TOTAL Acumulado é o último valor da coluna P.TOTAL
+            const totalPnl = data[data.length - 1].pnl; 
+            
+            // Média de R-TK 
+            const sumRtk = data.reduce((sum, trade) => sum + trade.rtk
