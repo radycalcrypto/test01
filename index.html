@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RadyPresale — Interface</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.min.js"></script>
+  <style>
+    :root{--bg:#06101a;--card:#0b1720;--muted:#93a3b4;--accent:#6ee7b7;color-scheme:dark}
+    body{font-family:Inter,system-ui,Arial;background:var(--bg);color:#e6eef8;padding:20px}
+    .wrap{max-width:980px;margin:0 auto}
+    .card{background:var(--card);border-radius:12px;padding:18px;margin:12px 0;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+    input,button,select,textarea{padding:10px;border-radius:8px;border:1px solid #1f2b36;background:#07121a;color:#e6eef8}
+    label{display:block;margin:8px 0 6px;font-size:14px}
+    .row{display:flex;gap:8px}
+    .muted{color:var(--muted);font-size:13px}
+    .ownerbox{background:#071920;padding:12px;border-radius:10px}
+    pre small{color:var(--muted)}
+    .success{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>RadyPresale — Interface</h1>
+    <div class="card">
+      <strong>Status:</strong> <span id="status">Desconectado</span>
+      <div style="margin-top:12px" class="row">
+        <button id="connect">Conectar MetaMask</button>
+        <button id="refresh">Atualizar dados</button>
+      </div>
+      <div class="muted">Abra via servidor (http://) — NÃO abra pelo file:// (extensões bloqueiam MetaMask).</div>
+    </div>
+
+    <div class="card">
+      <h3>Configuração (substitua abaixo pelos endereços do seu deploy)</h3>
+      <label>Endereço do Presale</label>
+      <input id="PRESALE_ADDRESS" placeholder="0x..." />
+      <label>Endereço do Token</label>
+      <input id="TOKEN_ADDRESS" placeholder="0x..." />
+      <label>Rede (chainId numérico)</label>
+      <input id="CHAIN_ID" placeholder="e.g. 11155111 (Sepolia) or 84531 (Base Sepolia)" />
+      <div style="margin-top:8px" class="row">
+        <button id="saveCfg">Salvar Config</button>
+        <button id="loadCfg">Carregar Config</button>
+      </div>
+      <div class="muted">Após salvar, clique Conectar MetaMask e depois Atualizar dados.</div>
+    </div>
+
+    <div class="card">
+      <h3>Dados da Presale</h3>
+      <div>Presale contract: <span id="presaleAddress">-</span></div>
+      <div>Token address: <span id="tokenAddress">-</span></div>
+      <div>Presale active: <span id="active">-</span></div>
+      <div>Total ETH arrecadado: <span id="totalEth">0</span></div>
+      <div>Saldo de tokens no contrato: <span id="tokenBalance">0</span></div>
+      <div class="muted">Dados lidos diretamente do contrato.</div>
+    </div>
+
+    <div class="card">
+      <h3>Comprar (Contribuir)</h3>
+      <label>Valor em ETH</label>
+      <input id="buyAmt" placeholder="0.1" />
+      <div class="row" style="margin-top:8px">
+        <button id="buyBtn">Comprar (buyTokens)</button>
+      </div>
+      <div id="buyMsg" class="muted"></div>
+    </div>
+
+    <div class="card ownerbox">
+      <h3>Funções do Owner (aparecem se for o dono)</h3>
+      <div>Você conectado como: <span id="userAddr">-</span></div>
+      <div style="margin-top:8px" class="row">
+        <button id="startBtn">Start Presale</button>
+        <button id="endBtn">End Presale</button>
+        <button id="withdrawEthBtn">Withdraw ETH</button>
+        <button id="withdrawTokBtn">Withdraw Tokens</button>
+      </div>
+      <div id="ownerMsg" class="muted"></div>
+    </div>
+
+    <div class="card">
+      <h3>Logs</h3>
+      <pre id="log" style="height:160px;overflow:auto;background:#06141a;padding:10px;border-radius:8px"></pre>
+    </div>
+
+    <script>
+    // -------------------- ABIs mínimas necessárias --------------------
+    const PRESALE_ABI = [
+      "function token() view returns (address)",
+      "function tokenPrice() view returns (uint256)",
+      "function presaleActive() view returns (bool)",
+      "function contributionOf(address) view returns (uint256)",
+      "function buyTokens() payable",
+      "function startPresale()",
+      "function endPresale()",
+      "function withdrawETH()",
+      "function withdrawRemainingTokens()",
+      "function balanceOf(address) view returns (uint256)"
+    ];
+
+    const TOKEN_ABI = [
+      "function balanceOf(address) view returns (uint256)",
+      "function transfer(address to, uint256 amount) returns (bool)"
+    ];
+
+    // -------------------- estado local --------------------
+    let provider, signer, userAddress;
+    let presaleContract, tokenContract;
+
+    function log(msg){
+      const el = document.getElementById('log');
+      el.innerText = (new Date()).toLocaleTimeString() + ' - ' + msg + '\n' + el.innerText;
+    }
+
+    // -------------------- helpers de storage --------------------
+    function saveCfg(){
+      const p = document.getElementById('PRESALE_ADDRESS').value.trim();
+      const t = document.getElementById('TOKEN_ADDRESS').value.trim();
+      const c = document.getElementById('CHAIN_ID').value.trim();
+      localStorage.setItem('rady_presale_cfg', JSON.stringify({p,t,c}));
+      alert('Config salva localmente');
+    }
+    function loadCfg(){
+      const v = localStorage.getItem('rady_presale_cfg');
+      if(!v) return alert('Nenhuma config salva');
+      const o = JSON.parse(v);
+      document.getElementById('PRESALE_ADDRESS').value = o.p || '';
+      document.getElementById('TOKEN_ADDRESS').value = o.t || '';
+      document.getElementById('CHAIN_ID').value = o.c || '';
+    }
+
+    document.getElementById('saveCfg').onclick = saveCfg;
+    document.getElementById('loadCfg').onclick = loadCfg;
+
+    // -------------------- Conectar MetaMask --------------------
+    async function connect(){
+      try{
+        if(!window.ethereum) return alert('Instale MetaMask');
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        userAddress = await signer.getAddress();
+        document.getElementById('status').innerText = 'Conectado';
+        document.getElementById('userAddr').innerText = userAddress;
+        log('MetaMask conectada: ' + userAddress);
+        await initContracts();
+      }catch(e){ console.error(e); alert('Erro conectar: ' + (e.message||e)); }
+    }
+
+    async function initContracts(){
+      const presaleAddr = document.getElementById('PRESALE_ADDRESS').value.trim();
+      const tokenAddr = document.getElementById('TOKEN_ADDRESS').value.trim();
+      if(!presaleAddr || !tokenAddr) return log('Preencha PRESALE_ADDRESS e TOKEN_ADDRESS e clique Atualizar');
+      presaleContract = new ethers.Contract(presaleAddr, PRESALE_ABI, signer);
+      tokenContract = new ethers.Contract(tokenAddr, TOKEN_ABI, signer);
+      document.getElementById('presaleAddress').innerText = presaleAddr;
+      document.getElementById('tokenAddress').innerText = tokenAddr;
+      await refreshData();
+    }
+
+    async function refreshData(){
+      if(!presaleContract) return log('Contrato não inicializado');
+      try{
+        const active = await presaleContract.presaleActive();
+        const totalEth = await provider.getBalance(presaleContract.target ?? presaleContract.address);
+        // token balance in presale
+        const tokBal = await tokenContract.balanceOf(presaleContract.address);
+        document.getElementById('active').innerText = active ? 'SIM' : 'NÃO';
+        document.getElementById('totalEth').innerText = ethers.formatEther(totalEth) + ' ETH';
+        document.getElementById('tokenBalance').innerText = ethers.formatUnits(tokBal, 18) + ' TOK';
+        log('Dados atualizados');
+      }catch(e){ console.error(e); log('Erro refresh: ' + (e.message||e)); }
+    }
+
+    async function buy(){
+      if(!presaleContract) return alert('Contrato não inicializado');
+      const val = document.getElementById('buyAmt').value;
+      if(!val) return alert('Digite valor em ETH');
+      try{
+        const wei = ethers.parseEther(val);
+        const tx = await signer.sendTransaction({ to: presaleContract.address, value: wei });
+        log('Transação enviada: ' + tx.hash);
+        await tx.wait();
+        log('Contribuição confirmada: ' + tx.hash);
+        await refreshData();
+      }catch(e){ console.error(e); alert('Erro buy: ' + (e.message||e)); }
+    }
+
+    // owner functions
+    async function startPresale(){ if(!presaleContract) return; try{ const tx = await presaleContract.startPresale(); log('Start tx: '+tx.hash); await tx.wait(); log('Presale iniciada'); await refreshData(); }catch(e){alert('Erro: '+(e.message||e));} }
+    async function endPresale(){ if(!presaleContract) return; try{ const tx = await presaleContract.endPresale(); log('End tx: '+tx.hash); await tx.wait(); log('Presale encerrada'); await refreshData(); }catch(e){alert('Erro: '+(e.message||e));} }
+    async function withdrawETH(){ if(!presaleContract) return; try{ const tx = await presaleContract.withdrawETH(); log('Withdraw tx: '+tx.hash); await tx.wait(); log('ETH retirado'); await refreshData(); }catch(e){alert('Erro: '+(e.message||e));} }
+    async function withdrawTokens(){ if(!presaleContract) return; try{ const tx = await presaleContract.withdrawRemainingTokens(); log('WithdrawTokens tx:'+tx.hash); await tx.wait(); log('Tokens retirados'); await refreshData(); }catch(e){alert('Erro: '+(e.message||e));} }
+
+    // bind
+    document.getElementById('connect').onclick = connect;
+    document.getElementById('refresh').onclick = refreshData;
+    document.getElementById('buyBtn').onclick = buy;
+    document.getElementById('startBtn').onclick = startPresale;
+    document.getElementById('endBtn').onclick = endPresale;
+    document.getElementById('withdrawEthBtn').onclick = withdrawETH;
+    document.getElementById('withdrawTokBtn').onclick = withdrawTokens;
+
+    // try load cfg on open
+    loadCfg();
+    </script>
+  </div>
+</body>
+</html>
