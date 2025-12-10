@@ -3,149 +3,147 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PILL Token Presale</title>
+<title>PILL Presale</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
 <style>
-body { margin:0; font-family:'Courier New', monospace; background:black; color:#00ff00; overflow-x:hidden; }
-canvas { position:fixed; top:0; left:0; z-index:-1; }
-.container { max-width:900px; margin:0 auto; padding:20px; text-align:center; }
-h1 { font-size:3em; color:#00ffcc; margin-bottom:10px; }
-h2 { font-size:2em; color:#ff00ff; }
-.neon-button { background:#0ff; border:none; padding:15px 30px; color:black; font-size:1.2em; font-weight:bold; cursor:pointer; margin:10px; border-radius:10px; box-shadow:0 0 20px #0ff; transition:all 0.3s ease-in-out; }
-.neon-button:hover { box-shadow:0 0 40px #0ff,0 0 80px #0ff; transform:scale(1.1); }
-input[type="number"] { padding:10px; font-size:1em; width:150px; border-radius:8px; border:2px solid #0ff; margin:10px; background:black; color:#0ff; }
-.progress-bar { background:#222; border:2px solid #0ff; border-radius:10px; margin:10px 0; width:100%; height:25px; overflow:hidden; }
-.progress { background:#0ff; height:100%; width:0%; text-align:center; color:black; line-height:25px; font-weight:bold; }
-.info-box { background:rgba(0,0,0,0.6); border:2px solid #0ff; border-radius:15px; padding:20px; margin:20px 0; }
-.claim-bar { background:#111; border:2px solid #ff0; border-radius:10px; height:20px; width:100%; margin:10px 0; }
-.claim-progress { background:#ff0; height:100%; width:0%; text-align:center; font-weight:bold; color:black; }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Courier New', monospace;
+    background: black;
+    color: #00ff00;
+    overflow: hidden;
+  }
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+    text-align: center;
+  }
+  h1 {
+    color: #00ffcc;
+    font-size: 3rem;
+  }
+  .neon-button {
+    background: none;
+    border: 2px solid #00ffcc;
+    color: #00ffcc;
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    margin: 1rem;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+  .neon-button:hover {
+    box-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc;
+  }
+  input {
+    padding: 0.5rem;
+    font-size: 1rem;
+    width: 200px;
+    margin-right: 1rem;
+  }
+  .bar-container {
+    width: 100%;
+    background-color: #111;
+    border: 1px solid #00ff00;
+    margin: 1rem 0;
+  }
+  .bar {
+    width: 0%;
+    height: 20px;
+    background-color: #00ffcc;
+  }
 </style>
 </head>
 <body>
 
-<canvas id="matrix"></canvas>
-
 <div class="container">
-  <h1>PILL Token Presale</h1>
-  <h2>Token: PILL</h2>
-  <div class="info-box">
-    <p>Preço Inicial: <span id="tokenPrice">1.00 USD</span></p>
-    <p>Total Capturado: <span id="totalRaised">0 USD</span></p>
-    <p>Tokens Vendidos: <span id="tokensSold">0 / 100</span></p>
-    <div class="progress-bar"><div class="progress" id="progressMarketCap">0%</div></div>
+  <h1>PILL Presale</h1>
+  <p>Token: <strong>PILL</strong></p>
+  <p>Preço inicial: <strong>0.003 ETH</strong></p>
+  <div class="bar-container">
+    <div class="bar" id="marketCapBar"></div>
   </div>
-
-  <button class="neon-button" id="connectWallet">Conectar MetaMask</button>
-
-  <div class="info-box">
-    <p>Comprar Tokens:</p>
-    <input type="number" id="ethAmount" placeholder="ETH a investir" step="0.01" min="0">
-    <button class="neon-button" id="buyTokens">Comprar</button>
-  </div>
-
-  <div class="info-box">
-    <p>Claim Tokens:</p>
-    <div class="claim-bar"><div class="claim-progress" id="claimProgress">0%</div></div>
-  </div>
+  <p>Market Cap: <span id="marketCapPercent">0</span>%</p>
+  <p>Tokens vendidos: <span id="tokensSold">0</span></p>
+  
+  <button class="neon-button" id="connectWalletBtn">Conectar MetaMask</button>
+  <br>
+  <input type="number" id="ethAmount" placeholder="ETH para comprar" step="0.001" min="0.001">
+  <button class="neon-button" id="buyBtn">Comprar Tokens</button>
+  <p id="status"></p>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
-
 <script>
-window.addEventListener('DOMContentLoaded', () => {
+const CONTRACT_ADDRESS = "0x6754c0f28ab363Ed6090843baeAb201C3CaCD96D";
+const TOKEN_PRICE = 0.003; // ETH
+let provider;
+let signer;
+let contract;
 
-  // ===== Matrix Effect =====
-  const canvas = document.getElementById('matrix');
-  const ctx = canvas.getContext('2d');
-  canvas.height = window.innerHeight;
-  canvas.width = window.innerWidth;
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()*&^%';
-  const fontSize = 16;
-  const columns = canvas.width / fontSize;
-  const drops = Array.from({length: columns}, () => 1);
-  function drawMatrix() {
-    ctx.fillStyle = 'rgba(0,0,0,0.05)';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle = '#0ff';
-    ctx.font = fontSize + 'px monospace';
-    drops.forEach((y,i)=>{
-      const text = letters[Math.floor(Math.random()*letters.length)];
-      ctx.fillText(text,i*fontSize,y*fontSize);
-      drops[i]++;
-      if(drops[i]*fontSize>canvas.height && Math.random()>0.975) drops[i]=0;
-    });
+const abi = [
+  "function buyTokens() external payable",
+  "function progress() view returns(uint256)",
+  "function tokensSold() view returns(uint256)"
+];
+
+async function connectWallet() {
+  try {
+    await window.ethereum.request({ method: "eth_requestAccounts" });
+    provider = new ethers.providers.Web3Provider(window.ethereum);
+    signer = provider.getSigner();
+    contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
+    document.getElementById("status").innerText = "MetaMask conectada!";
+  } catch (err) {
+    console.error(err);
+    document.getElementById("status").innerText = "Erro ao conectar MetaMask!";
   }
-  setInterval(drawMatrix,50);
+}
 
-  // ===== MetaMask =====
-  let provider, signer, userAddress;
-  async function connectWallet() {
-    try {
-      if(!window.ethereum) throw new Error("MetaMask não detectada!");
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-      signer = provider.getSigner();
-      userAddress = await signer.getAddress();
-      document.getElementById('connectWallet').innerText = 'Wallet Conectada';
-      console.log('Conectado:', userAddress);
-    } catch(err) {
-      console.error('Erro MetaMask:', err);
-      alert('Erro ao conectar MetaMask! Veja console.');
-    }
+async function updateUI() {
+  if (!contract) return;
+  try {
+    const progressPercent = await contract.progress();
+    const sold = await contract.tokensSold();
+    document.getElementById("marketCapBar").style.width = progressPercent + "%";
+    document.getElementById("marketCapPercent").innerText = progressPercent;
+    document.getElementById("tokensSold").innerText = ethers.utils.formatUnits(sold, 18);
+  } catch (err) {
+    console.error(err);
   }
-  document.getElementById('connectWallet').addEventListener('click', connectWallet);
+}
 
-  // ===== Presale Config =====
-  const PRESALE_ADDRESS = "0xSEU_CONTRATO_AQUI";
-  const PRESALE_ABI = [ /* Cole ABI aqui */ ];
-
-  let tokenPrice = 1.0;
-  let totalRaised = 0;
-  let tokensSold = 0;
-  const maxCap = 100;
-
-  function updateUI() {
-    document.getElementById('tokenPrice').innerText = tokenPrice.toFixed(2) + ' USD';
-    document.getElementById('totalRaised').innerText = totalRaised.toFixed(2) + ' USD';
-    document.getElementById('tokensSold').innerText = `${tokensSold.toFixed(2)} / ${maxCap}`;
-    const percent = (tokensSold/maxCap)*100;
-    document.getElementById('progressMarketCap').style.width = percent + '%';
-    document.getElementById('progressMarketCap').innerText = Math.floor(percent) + '%';
-    document.getElementById('claimProgress').style.width = percent + '%';
-    document.getElementById('claimProgress').innerText = Math.floor(percent) + '%';
+async function buyTokens() {
+  if (!contract || !signer) {
+    alert("Conecte a MetaMask primeiro!");
+    return;
+  }
+  const ethAmount = parseFloat(document.getElementById("ethAmount").value);
+  if (isNaN(ethAmount) || ethAmount <= 0) {
+    alert("Digite um valor válido de ETH");
+    return;
   }
 
-  // ===== Buy Token =====
-  async function buyTokens() {
-    if(!signer) return alert('Conecte a MetaMask primeiro!');
-    const ethAmount = parseFloat(document.getElementById('ethAmount').value);
-    if(!ethAmount || ethAmount <= 0) return alert('Insira ETH válido');
-
-    try {
-      const contract = new ethers.Contract(PRESALE_ADDRESS, PRESALE_ABI, signer);
-      const tx = await contract.buyTokens({ value: ethers.utils.parseEther(ethAmount.toString()) });
-      console.log("Transação enviada:", tx.hash);
-      await tx.wait();
-      console.log("Transação confirmada!");
-
-      const tokensSoldRaw = await contract.tokensSold();
-      const totalRaisedRaw = await contract.totalRaisedUSD();
-      const tokenPriceRaw = await contract.tokenPriceUSD();
-
-      tokensSold = parseFloat(ethers.utils.formatUnits(tokensSoldRaw, 18));
-      totalRaised = parseFloat(totalRaisedRaw);
-      tokenPrice = parseFloat(tokenPriceRaw);
-
-      updateUI();
-      alert("Compra realizada com sucesso!");
-    } catch(err) {
-      console.error("Erro na compra:", err);
-      alert("Erro ao comprar tokens. Veja console.");
-    }
+  try {
+    document.getElementById("status").innerText = "Aguardando assinatura na MetaMask...";
+    const tx = await contract.buyTokens({ value: ethers.utils.parseEther(ethAmount.toString()) });
+    await tx.wait();
+    document.getElementById("status").innerText = "Compra realizada com sucesso!";
+    updateUI();
+  } catch (err) {
+    console.error(err);
+    document.getElementById("status").innerText = "Erro ao comprar token. Veja o console.";
   }
-  document.getElementById('buyTokens').addEventListener('click', buyTokens);
+}
 
-  updateUI();
-});
+document.getElementById("connectWalletBtn").addEventListener("click", connectWallet);
+document.getElementById("buyBtn").addEventListener("click", buyTokens);
+
+// Atualiza UI a cada 5 segundos
+setInterval(updateUI, 5000);
+updateUI();
 </script>
+
 </body>
 </html>
