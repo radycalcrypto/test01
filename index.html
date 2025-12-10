@@ -1,19 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PILL Presale</title>
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js"></script>
+
+<style>
+body {
+    margin:0; padding:0;
+    background:black;
+    color:#00ffbf;
+    font-family:Arial, sans-serif;
+    text-align:center;
+}
+.container {
+    max-width:500px;
+    margin:50px auto;
+    padding:30px;
+    border-radius:12px;
+    background: rgba(0,0,0,0.7);
+    border:1px solid #00ffbf;
+}
+h1 {
+    color:#00ffc3;
+}
+button {
+    width:90%;
+    padding:14px;
+    margin-top:12px;
+    border:0;
+    border-radius:10px;
+    font-size:17px;
+    font-weight:bold;
+    cursor:pointer;
+    background:#00ffbf;
+    color:black;
+    transition:0.3s;
+}
+button:hover:not(:disabled) {
+    background:#ff0066;
+    color:white;
+}
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+input {
+    width:90%;
+    padding:12px;
+    margin-top:14px;
+    border-radius:8px;
+    font-size:16px;
+    border: 1px solid #00ffbf;
+    background: #000;
+    color: #00ffbf;
+}
+.progressBox {
+    width:100%;
+    height:22px;
+    background:#222;
+    border-radius:12px;
+    margin-top:12px;
+    overflow:hidden;
+    border:1px solid #00ffbf;
+}
+.progressFill {
+    height:100%;
+    width:0%;
+    background:#00ffaa;
+    transition:0.4s;
+}
+#statusMessage {
+    margin-top: 15px;
+    font-weight: bold;
+    min-height: 20px;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+    <h1>PILL Presale</h1>
+    <button id="connectBtn">Conectar MetaMask</button>
+    <div id="statusMessage"></div>
+
+    <div id="infoCard" style="margin-top:20px;">
+        <div id="priceDisplay">Preço do token: Aguardando conexão...</div>
+        <div id="tokensSold">Tokens vendidos: --</div>
+        <div class="progressBox">
+            <div class="progressFill" id="progressFill"></div>
+        </div>
+        <input type="number" id="ethAmount" placeholder="Quantidade de ETH" min="0" step="0.001">
+        <button id="buyBtn" disabled>Comprar</button>
+    </div>
+</div>
+
 <script>
 // A função de inicialização que será chamada APÓS o carregamento completo do Ethers.js
 function initDApp() {
-    // 1. DESESTRUTURAÇÃO DO ETHERS:
+    // Desestruturação do Ethers v6
     const { BrowserProvider, Contract, parseEther, formatEther, formatUnits } = ethers;
 
     let provider, signer, account, presaleContract;
-    const presaleAddress = "0x6754c0f28ab363Ed6090843baeAb201C3CaCD96D"; // Seu contrato PillPresaleETH
-
-    // ABI CORRIGIDA: Inclui todas as VIEW functions usadas no JS
+    
+    // ENDEREÇO DO SEU CONTRATO DEPLOYADO NA SEPOLIA
+    const presaleAddress = "0x6b4cd06f01E2840525cBef2962Bce688fa5D6f04"; 
+    
+    // ABI COMPLETA e CORRIGIDA para o contrato PillPresaleETH
     const abiPresale = [
         "function buyTokens() payable",
         "function tokensSold() view returns(uint256)",
         "function tokenPrice() view returns(uint256)",
-        "function maxCapETH() view returns(uint256)",
-        "function totalRaisedETH() view returns(uint256)" // <-- CORREÇÃO: totalRaisedETH
+        "function progress() view returns(uint256)", 
+        "function presaleActive() view returns(bool)"
     ];
 
     const connectBtn = document.getElementById("connectBtn");
@@ -21,13 +122,15 @@ function initDApp() {
     const ethAmountInput = document.getElementById("ethAmount");
     const statusMessage = document.getElementById("statusMessage");
 
-    // Função para exibir mensagens de status
+    // Chain ID da rede Sepolia (11155111)
+    const requiredChainId = BigInt(11155111);
+
     function setStatus(message, isError = false) {
         statusMessage.innerText = message;
         statusMessage.style.color = isError ? '#ff0066' : '#00ffaa';
     }
 
-    // 1. Conectar MetaMask (Função principal de conexão)
+    // 1. Conectar MetaMask e verificar Rede
     async function connectWallet() {
         if (!window.ethereum) {
             setStatus("MetaMask não encontrada! Instale a extensão para continuar.", true);
@@ -36,20 +139,24 @@ function initDApp() {
 
         try {
             provider = new BrowserProvider(window.ethereum);
+
+            const network = await provider.getNetwork();
             
-            // Verifica se a rede é a esperada (Exemplo: 1 para Mainnet, 11155111 para Sepolia)
-            // Se você estiver em uma rede de testes, ajuste o valor:
-            const chainId = (await provider.getNetwork()).chainId;
-            // if (chainId !== BigInt(11155111)) { 
-            //     setStatus("Conecte-se à rede Sepolia para esta Presale.", true);
-            //     return;
-            // }
+            // Verifica se a rede é a Sepolia
+            if (network.chainId !== requiredChainId) {
+                 setStatus("Por favor, mude a sua MetaMask para a rede Sepolia (ETH Testnet).", true);
+                 // Tenta sugerir a troca para Sepolia
+                 await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: '0xaa36a7' }], // ID de Sepolia em Hex
+                });
+                return;
+            }
 
             const accounts = await provider.send("eth_requestAccounts", []);
             account = accounts[0];
             signer = await provider.getSigner();
             
-            // Inicializa o contrato com o Signer
             presaleContract = new Contract(presaleAddress, abiPresale, signer);
 
             // Atualiza a UI para estado conectado
@@ -57,27 +164,29 @@ function initDApp() {
             connectBtn.style.background = "#00ffaa";
             connectBtn.disabled = true;
             buyBtn.disabled = false;
-            setStatus("Conexão bem-sucedida!", false);
 
-            updateUI();
+            updateUI(); // Carrega os dados do contrato
 
+            // Escuta por mudanças de conta/rede
             window.ethereum.on('accountsChanged', handleAccountsChanged);
             window.ethereum.on('chainChanged', handleChainChanged);
 
         } catch(err) {
             console.error("Erro ao conectar MetaMask:", err);
-            setStatus("Erro ao conectar! Recuse ou veja console para detalhes.", true);
+            let errorMsg = "Erro ao conectar. Verifique o console.";
+            if (err.code === 4001) {
+                errorMsg = "Conexão rejeitada pelo usuário na MetaMask.";
+            }
+            setStatus(errorMsg, true);
         }
     }
 
-    // Handler para mudança de contas
     function handleAccountsChanged(accounts) {
         if (accounts.length > 0) {
             location.reload(); 
         }
     }
 
-    // Handler para mudança de rede
     function handleChainChanged(chainId) {
         location.reload();
     }
@@ -88,40 +197,36 @@ function initDApp() {
         if (!presaleContract) return;
 
         try {
-            // Chamadas AGORA FUNCIONAM porque estão na ABI
             const sold = await presaleContract.tokensSold();
             const price = await presaleContract.tokenPrice();
-            const maxCap = await presaleContract.maxCapETH();
-            const totalRaisedETH = await presaleContract.totalRaisedETH();
-
+            const progressPct = await presaleContract.progress();
+            const isActive = await presaleContract.presaleActive();
 
             // Conversão de dados
-            const soldTokensFormatted = formatUnits(sold, 18); // Assumindo 18 decimais para o token
+            const soldTokensFormatted = formatUnits(sold, 18); 
             const priceETH = formatEther(price);
-            const maxCapETHFormatted = formatEther(maxCap);
-            
-            // Os valores são lidos do contrato como BigInts (totalRaisedETH) e devem ser formatados para cálculo
-            const soldETHFloat = parseFloat(formatEther(totalRaisedETH));
-            const maxCapETHFloat = parseFloat(maxCapETHFormatted);
+            const pct = Number(progressPct.toString()); 
 
             document.getElementById("tokensSold").innerText = "Tokens vendidos: " + soldTokensFormatted;
             document.getElementById("priceDisplay").innerText = "Preço do token: " + priceETH + " ETH";
 
-            // Calcula e atualiza a barra de progresso
-            // Uso de soldETHFloat e maxCapETHFloat
-            let pct = 0;
-            if (maxCapETHFloat > 0) {
-                 pct = (soldETHFloat / maxCapETHFloat) * 100;
-            }
-
+            // Atualiza a barra de progresso
             document.getElementById("progressFill").style.width = Math.min(pct, 100) + "%";
 
-            // Limpa o status se tudo carregou bem
-            setStatus("Conectado. Prontos para comprar.", false);
+            // Verifica o estado da Presale
+            if (!isActive || pct >= 100) {
+                setStatus("Presale Finalizada ou Inativa!", true);
+                buyBtn.disabled = true;
+                buyBtn.innerText = "Finalizado";
+            } else {
+                setStatus(`Conectado. Progresso: ${pct.toFixed(2)}%`, false);
+                buyBtn.disabled = false;
+                buyBtn.innerText = "Comprar";
+            }
 
         } catch(err){
             console.error("Erro ao atualizar UI/ler contrato:", err);
-            setStatus("Erro ao ler dados do contrato! Verifique a rede ou a ABI.", true);
+            setStatus("Erro ao ler dados do contrato! Verifique o Endereço ou a Rede.", true);
         }
     }
 
@@ -142,7 +247,7 @@ function initDApp() {
             
             setStatus(`Transação enviada: ${tx.hash.substring(0, 10)}... Aguardando mineração.`, false);
             
-            await tx.wait();
+            await tx.wait(); // Aguarda a transação ser confirmada
             
             setStatus("Compra de tokens confirmada com sucesso!", false);
             updateUI(); 
@@ -152,7 +257,6 @@ function initDApp() {
 
             let errorMsg = "Erro ao comprar tokens. Verifique o console.";
             if (err.reason) {
-                // Tenta extrair a mensagem de revert (ex: "Max cap reached")
                 errorMsg = `Transação Revertida: ${err.reason}`;
             } else if (err.code === 4001) {
                 errorMsg = "Transação rejeitada pelo usuário na MetaMask.";
@@ -173,7 +277,10 @@ function initDApp() {
     }, 10000);
 }
 
-// Chama initDApp quando a janela estiver totalmente carregada
+// Chama initDApp quando a janela estiver totalmente carregada (garante que ethers esteja definido)
 window.addEventListener('load', initDApp);
 
 </script>
+
+</body>
+</html>
