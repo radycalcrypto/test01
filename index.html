@@ -2,19 +2,18 @@
 // A função de inicialização que será chamada APÓS o carregamento completo do Ethers.js
 function initDApp() {
     // 1. DESESTRUTURAÇÃO DO ETHERS:
-    // Agora 'ethers' está garantido de estar disponível
     const { BrowserProvider, Contract, parseEther, formatEther, formatUnits } = ethers;
 
     let provider, signer, account, presaleContract;
     const presaleAddress = "0x6754c0f28ab363Ed6090843baeAb201C3CaCD96D"; // Seu contrato PillPresaleETH
 
-    // ABI simplificada do contrato, usando o formato Ethers v6
+    // ABI CORRIGIDA: Inclui todas as VIEW functions usadas no JS
     const abiPresale = [
         "function buyTokens() payable",
         "function tokensSold() view returns(uint256)",
         "function tokenPrice() view returns(uint256)",
         "function maxCapETH() view returns(uint256)",
-        "function totalRaisedETH() view returns(uint256)" // Adicionada totalRaisedETH
+        "function totalRaisedETH() view returns(uint256)" // <-- CORREÇÃO: totalRaisedETH
     ];
 
     const connectBtn = document.getElementById("connectBtn");
@@ -36,10 +35,16 @@ function initDApp() {
         }
 
         try {
-            // Cria um provedor que se conecta ao MetaMask
             provider = new BrowserProvider(window.ethereum);
+            
+            // Verifica se a rede é a esperada (Exemplo: 1 para Mainnet, 11155111 para Sepolia)
+            // Se você estiver em uma rede de testes, ajuste o valor:
+            const chainId = (await provider.getNetwork()).chainId;
+            // if (chainId !== BigInt(11155111)) { 
+            //     setStatus("Conecte-se à rede Sepolia para esta Presale.", true);
+            //     return;
+            // }
 
-            // Solicita ao usuário para conectar a conta
             const accounts = await provider.send("eth_requestAccounts", []);
             account = accounts[0];
             signer = await provider.getSigner();
@@ -54,10 +59,8 @@ function initDApp() {
             buyBtn.disabled = false;
             setStatus("Conexão bem-sucedida!", false);
 
-            // Inicializa a UI
             updateUI();
 
-            // Escuta por mudanças de conta/rede (melhora a experiência do usuário)
             window.ethereum.on('accountsChanged', handleAccountsChanged);
             window.ethereum.on('chainChanged', handleChainChanged);
 
@@ -69,10 +72,8 @@ function initDApp() {
 
     // Handler para mudança de contas
     function handleAccountsChanged(accounts) {
-        if (accounts.length === 0) {
+        if (accounts.length > 0) {
             location.reload(); 
-        } else if (accounts[0] !== account) {
-            location.reload();
         }
     }
 
@@ -87,24 +88,36 @@ function initDApp() {
         if (!presaleContract) return;
 
         try {
+            // Chamadas AGORA FUNCIONAM porque estão na ABI
             const sold = await presaleContract.tokensSold();
             const price = await presaleContract.tokenPrice();
             const maxCap = await presaleContract.maxCapETH();
             const totalRaisedETH = await presaleContract.totalRaisedETH();
 
 
-            const soldTokensFormatted = formatUnits(sold, 18); 
+            // Conversão de dados
+            const soldTokensFormatted = formatUnits(sold, 18); // Assumindo 18 decimais para o token
             const priceETH = formatEther(price);
             const maxCapETHFormatted = formatEther(maxCap);
-            const soldETHFormatted = parseFloat(formatEther(totalRaisedETH));
+            
+            // Os valores são lidos do contrato como BigInts (totalRaisedETH) e devem ser formatados para cálculo
+            const soldETHFloat = parseFloat(formatEther(totalRaisedETH));
             const maxCapETHFloat = parseFloat(maxCapETHFormatted);
 
             document.getElementById("tokensSold").innerText = "Tokens vendidos: " + soldTokensFormatted;
             document.getElementById("priceDisplay").innerText = "Preço do token: " + priceETH + " ETH";
 
             // Calcula e atualiza a barra de progresso
-            const pct = (soldETHFormatted / maxCapETHFloat) * 100;
+            // Uso de soldETHFloat e maxCapETHFloat
+            let pct = 0;
+            if (maxCapETHFloat > 0) {
+                 pct = (soldETHFloat / maxCapETHFloat) * 100;
+            }
+
             document.getElementById("progressFill").style.width = Math.min(pct, 100) + "%";
+
+            // Limpa o status se tudo carregou bem
+            setStatus("Conectado. Prontos para comprar.", false);
 
         } catch(err){
             console.error("Erro ao atualizar UI/ler contrato:", err);
@@ -124,6 +137,7 @@ function initDApp() {
             
             const valueToSend = parseEther(ethAmount);
 
+            // Chama a função buyTokens do contrato, enviando ETH no campo 'value'
             const tx = await presaleContract.buyTokens({ value: valueToSend });
             
             setStatus(`Transação enviada: ${tx.hash.substring(0, 10)}... Aguardando mineração.`, false);
@@ -138,6 +152,7 @@ function initDApp() {
 
             let errorMsg = "Erro ao comprar tokens. Verifique o console.";
             if (err.reason) {
+                // Tenta extrair a mensagem de revert (ex: "Max cap reached")
                 errorMsg = `Transação Revertida: ${err.reason}`;
             } else if (err.code === 4001) {
                 errorMsg = "Transação rejeitada pelo usuário na MetaMask.";
@@ -146,7 +161,7 @@ function initDApp() {
         }
     }
 
-    // Adiciona os event listeners DENTRO da função de inicialização
+    // Inicializa os event listeners após o carregamento
     connectBtn.addEventListener("click", connectWallet);
     buyBtn.addEventListener("click", buyTokens);
 
@@ -158,9 +173,7 @@ function initDApp() {
     }, 10000);
 }
 
-
-// NOVO: Chama initDApp quando a janela estiver totalmente carregada
-// Isso garante que o Ethers.js (carregado via CDN) esteja pronto.
+// Chama initDApp quando a janela estiver totalmente carregada
 window.addEventListener('load', initDApp);
 
 </script>
