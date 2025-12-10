@@ -85,6 +85,18 @@ h1 {
     text-shadow: 0 0 10px #00ffbf;
 }
 
+/* Estilo para o Cronômetro */
+.timer-display {
+    color: #ff0066; /* Cor de alerta */
+    font-size: 1.4em;
+    font-weight: bold;
+    margin-bottom: 20px;
+    padding: 10px;
+    border: 1px dashed #ff0066;
+    border-radius: 8px;
+    background: rgba(255, 0, 102, 0.05);
+}
+
 /* Botões */
 button {
     width: 90%;
@@ -236,6 +248,7 @@ input:focus {
 
 <div class="container">
     <h1>PILL Presale</h1>
+    <div class="timer-display" id="presaleTimer">Tempo Restante: --:--:--</div>
     <button id="connectBtn">Conectar MetaMask</button>
     <div id="statusMessage">Aguardando conexão com a MetaMask...</div>
 
@@ -267,7 +280,6 @@ input:focus {
 // A função de inicialização que será chamada APÓS o carregamento completo do Ethers.js
 function initDApp() {
     // Desestruturação do Ethers v6
-    // NOTA: 'ethers' é carregado pela CDN e garantido pela window.onload
     const { BrowserProvider, Contract, parseEther, formatEther, formatUnits } = ethers;
 
     let provider, signer, account, presaleContract;
@@ -286,12 +298,13 @@ function initDApp() {
         "function totalRaisedETH() view returns(uint256)" 
     ];
 
-    // Mapeamento de IDs (torna o código mais limpo e fácil de debugar)
+    // Mapeamento de IDs
     const elements = {
         connectBtn: document.getElementById("connectBtn"),
         buyBtn: document.getElementById("buyBtn"),
         ethAmountInput: document.getElementById("ethAmount"),
         statusMessage: document.getElementById("statusMessage"),
+        presaleTimer: document.getElementById("presaleTimer"),
         priceDisplay: document.getElementById("priceDisplay"),
         tokensSoldDisplay: document.getElementById("tokensSold"),
         tokensRemainingDisplay: document.getElementById("tokensRemaining"),
@@ -308,9 +321,13 @@ function initDApp() {
     // Chain ID da rede Sepolia (11155111)
     const requiredChainId = BigInt(11155111);
 
-    // --- PARÂMETROS PARA CÁLCULO DE MARKET CAP (FIXOS PARA DEMONSTRAÇÃO) ---
+    // --- PARÂMETROS PARA CÁLCULO DE MARKET CAP E DURAÇÃO (FIXOS PARA DEMONSTRAÇÃO) ---
     const ETH_TO_USD_RATE = 2000; 
     const MARKET_CAP_GOAL_USD = 100000; 
+    
+    // Configuração do Cronômetro: 4 horas a partir do carregamento da página
+    const PRESALE_DURATION_MS = 4 * 60 * 60 * 1000; // 4 horas em milissegundos
+    const PRESALE_START_TIME = Date.now(); 
     // --------------------------------------------------------------------------
 
 
@@ -320,9 +337,33 @@ function initDApp() {
             elements.statusMessage.style.color = isError ? '#ff0066' : '#00ffaa';
             elements.statusMessage.style.animation = isError ? 'none' : 'pulse 1.5s infinite';
         }
-        if (isError) {
-             console.error("STATUS ERROR:", message);
+    }
+
+    // Função de Cronômetro
+    function updateTimer() {
+        const elapsedTime = Date.now() - PRESALE_START_TIME;
+        const remainingTime = PRESALE_DURATION_MS - elapsedTime;
+        
+        if (!elements.presaleTimer) return;
+
+        if (remainingTime <= 0) {
+            elements.presaleTimer.innerText = "Presale Encerrada!";
+            // Se a presale acabar pelo tempo, desabilita o botão de compra
+            if(elements.buyBtn) {
+                 elements.buyBtn.disabled = true;
+                 elements.buyBtn.innerText = "Encerrada por Tempo";
+            }
+            return;
         }
+
+        const totalSeconds = Math.floor(remainingTime / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        const formatUnit = unit => String(unit).padStart(2, '0');
+
+        elements.presaleTimer.innerText = `Tempo Restante: ${formatUnit(hours)}:${formatUnit(minutes)}:${formatUnit(seconds)}`;
     }
 
     // 1. Conectar MetaMask e verificar Rede
@@ -406,7 +447,6 @@ function initDApp() {
             
             // --- Cálculos ---
             const marketCapCurrentUSD = (totalRaisedETHFormatted * ETH_TO_USD_RATE);
-            // Cálculo do total de tokens disponíveis no contrato. Assumindo 18 decimais.
             const totalTokensAvailable = (maxCapETHFormatted / priceETH) * priceETH; 
             const tokensRemaining = totalTokensAvailable - soldTokensFormatted;
             const tokensRemainingFormatted = Math.max(0, tokensRemaining);
@@ -434,10 +474,10 @@ function initDApp() {
 
 
             // --- Verificação de Estado ---
-            if (!elements.buyBtn) return; // Se o botão não existe, para aqui.
+            if (!elements.buyBtn) return;
 
             if (!isActive || presalePct >= 100) {
-                setStatus("Presale Finalizada ou Inativa!", true);
+                setStatus("Presale Finalizada (Cap atingido)!", true);
                 elements.buyBtn.disabled = true;
                 elements.buyBtn.innerText = "Finalizado";
             } else {
@@ -490,6 +530,10 @@ function initDApp() {
     // Inicializa os event listeners
     if (elements.connectBtn) elements.connectBtn.addEventListener("click", connectWallet);
     if (elements.buyBtn) elements.buyBtn.addEventListener("click", buyTokens);
+
+    // Inicia o cronômetro
+    updateTimer();
+    setInterval(updateTimer, 1000); // Atualiza o cronômetro a cada segundo
 
     // Atualiza UI a cada 10 segundos
     setInterval(() => {
