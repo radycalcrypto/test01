@@ -1,39 +1,33 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>PILL Launchpad</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PILL Pre-Sale</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
 <style>
-    body { margin:0; padding:0; background:black; color:#00ffbf; font-family:Arial,sans-serif; }
-    canvas#matrix { position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:-1; }
-    .container { max-width:500px; margin:auto; padding:30px; text-align:center; }
-    h1 { color:#00ffc3; text-shadow:0 0 10px #00ffbd; }
-    .card { margin-top:20px; padding:20px; border-radius:12px; background:rgba(0,0,0,0.6); border:1px solid #00ffbf; box-shadow:0 0 20px #00ffaa; }
-    button { width:90%; padding:14px; margin-top:12px; border:0; border-radius:10px; font-size:17px; font-weight:bold; cursor:pointer; background:#00ffbf; color:black; transition:0.3s; }
-    button:hover { background:#ff0066; color:white; box-shadow:0 0 20px #ff0066; }
-    .progressBox { width:100%; height:22px; background:#222; border-radius:12px; margin-top:12px; overflow:hidden; border:1px solid #00ffbf; }
-    .progressFill { height:100%; width:0%; background:#00ffaa; box-shadow:0 0 10px #00ffaa; transition:0.4s; }
-    #priceDisplay { font-size:21px; font-weight:bold; margin-top:10px; color:#00ffea; text-shadow:0 0 10px #00fff0; }
+body { margin:0; padding:0; background:black; color:#00ffbf; font-family:Arial,sans-serif; }
+.container { max-width:500px; margin:auto; padding:30px; text-align:center; }
+button { padding:12px; margin-top:12px; border-radius:10px; border:none; cursor:pointer; background:#00ffbf; color:black; font-weight:bold; width:90%; }
+button:hover { background:#ff0066; color:white; }
+.card { margin-top:20px; padding:20px; border-radius:12px; background:rgba(0,0,0,0.6); border:1px solid #00ffbf; }
+.progressBox { width:100%; height:22px; background:#222; border-radius:12px; margin-top:12px; overflow:hidden; border:1px solid #00ffbf; }
+.progressFill { height:100%; width:0%; background:#00ffaa; transition:0.4s; }
 </style>
 </head>
 <body>
-<canvas id="matrix"></canvas>
-
 <div class="container">
-    <h1>PILL PRE-SALE</h1>
-    <button id="connectBtn">Conectar MetaMask</button>
-
-    <div class="card">
-        <div id="priceDisplay">Preço: --</div>
-        <div id="marketCap">Market Cap: --</div>
-        <div class="progressBox"><div class="progressFill" id="progressFill"></div></div>
-        <div id="progressText" style="margin-top:8px;font-size:16px">Tokens Vendidos: --</div>
-        <input id="ethAmount" type="number" placeholder="Valor em ETH" style="width:90%;padding:12px;margin-top:14px;border-radius:8px;font-size:16px;" />
-        <button id="buyBtn">Comprar</button>
-        <button id="claimBtn">Claim</button>
-    </div>
+<h1>PILL Pre-Sale</h1>
+<button id="connectBtn">Conectar MetaMask</button>
+<div class="card">
+<div id="priceDisplay">Preço: --</div>
+<div id="marketCap">Market Cap: --</div>
+<div class="progressBox"><div class="progressFill" id="progressFill"></div></div>
+<div id="progressText" style="margin-top:8px;font-size:16px">Tokens Vendidos: --</div>
+<input id="ethAmount" type="number" placeholder="Valor em ETH" style="width:90%;padding:12px;margin-top:14px;border-radius:8px;font-size:16px;" />
+<button id="buyBtn">Comprar</button>
+<button id="claimBtn">Claim</button>
+</div>
 </div>
 
 <script>
@@ -49,33 +43,10 @@ const abi = [
 
 let provider, signer, launchpad, account;
 
-// MATRIX
-const canvas = document.getElementById("matrix");
-const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-const fontSize = 14;
-const columns = canvas.width / fontSize;
-const drops = Array(Math.floor(columns)).fill(1);
-function drawMatrix() {
-    ctx.fillStyle = "rgba(0,0,0,0.05)";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle = "#00ffbf";
-    ctx.font = fontSize + "px monospace";
-    for(let i=0;i<drops.length;i++){
-        const text = chars.charAt(Math.floor(Math.random()*chars.length));
-        ctx.fillText(text,i*fontSize,drops[i]*fontSize);
-        if(drops[i]*fontSize>canvas.height && Math.random()>0.975) drops[i]=0;
-        drops[i]++;
-    }
-}
-setInterval(drawMatrix,33);
-
 // Conectar MetaMask
 async function connectWallet() {
     if(typeof window.ethereum === 'undefined') {
-        alert("MetaMask não detectada!");
+        alert("MetaMask não detectada! Instale e desbloqueie.");
         return;
     }
 
@@ -138,6 +109,9 @@ document.getElementById("claimBtn").addEventListener("click", async ()=>{
         alert("Tokens recebidos!");
     } catch(err){ console.error(err); alert("Erro no claim! Veja console."); }
 });
+
+// Botão conectar
+document.getElementById("connectBtn").addEventListener("click", connectWallet);
 </script>
 </body>
 </html>
