@@ -37,7 +37,7 @@ body, html {
     top: 0;
     left: 0;
     width: 100%;
-    height: 200%; /* Aumentado para garantir o loop */
+    height: 200%; 
     background: repeating-linear-gradient(
         to bottom,
         transparent,
@@ -53,7 +53,7 @@ body, html {
         transform: translateY(0);
     }
     to {
-        transform: translateY(-50%); /* Ajustado para loop suave */
+        transform: translateY(-50%);
     }
 }
 
@@ -267,6 +267,7 @@ input:focus {
 // A função de inicialização que será chamada APÓS o carregamento completo do Ethers.js
 function initDApp() {
     // Desestruturação do Ethers v6
+    // NOTA: 'ethers' é carregado pela CDN e garantido pela window.onload
     const { BrowserProvider, Contract, parseEther, formatEther, formatUnits } = ethers;
 
     let provider, signer, account, presaleContract;
@@ -330,6 +331,7 @@ function initDApp() {
             setStatus("MetaMask não encontrada! Instale a extensão para continuar.", true);
             return;
         }
+        if (!elements.connectBtn) return setStatus("Erro de inicialização: Botão de conexão não encontrado.", true);
 
         try {
             provider = new BrowserProvider(window.ethereum);
@@ -355,7 +357,7 @@ function initDApp() {
             elements.connectBtn.innerText = `Conectado: ${account.substring(0,6)}...${account.slice(-4)}`;
             elements.connectBtn.style.background = "#00ffaa";
             elements.connectBtn.disabled = true;
-            elements.buyBtn.disabled = false;
+            if (elements.buyBtn) elements.buyBtn.disabled = false;
 
             updateUI(); 
 
@@ -404,32 +406,36 @@ function initDApp() {
             
             // --- Cálculos ---
             const marketCapCurrentUSD = (totalRaisedETHFormatted * ETH_TO_USD_RATE);
-            const totalTokensAvailable = (maxCapETHFormatted / priceETH) * (1e18 / 1e18); // Simplificando
+            // Cálculo do total de tokens disponíveis no contrato. Assumindo 18 decimais.
+            const totalTokensAvailable = (maxCapETHFormatted / priceETH) * priceETH; 
             const tokensRemaining = totalTokensAvailable - soldTokensFormatted;
             const tokensRemainingFormatted = Math.max(0, tokensRemaining);
+            const presalePct = Number(presaleProgress.toString());
+
 
             // --- Exibição ---
-            elements.priceDisplay.innerText = `${priceETH.toFixed(8)} ETH`;
-            elements.tokensSoldDisplay.innerText = soldTokensFormatted.toFixed(2);
-            elements.tokensRemainingDisplay.innerText = tokensRemainingFormatted.toFixed(2);
-            elements.marketCapDisplay.innerText = `$${marketCapCurrentUSD.toFixed(2)} USD`;
-            elements.totalRaisedETHDisplay.innerText = `${totalRaisedETHFormatted.toFixed(4)} ETH`;
+            if (elements.priceDisplay) elements.priceDisplay.innerText = `${priceETH.toFixed(8)} ETH`;
+            if (elements.tokensSoldDisplay) elements.tokensSoldDisplay.innerText = soldTokensFormatted.toFixed(2);
+            if (elements.tokensRemainingDisplay) elements.tokensRemainingDisplay.innerText = tokensRemainingFormatted.toFixed(2);
+            if (elements.marketCapDisplay) elements.marketCapDisplay.innerText = `$${marketCapCurrentUSD.toFixed(2)} USD`;
+            if (elements.totalRaisedETHDisplay) elements.totalRaisedETHDisplay.innerText = `${totalRaisedETHFormatted.toFixed(4)} ETH`;
 
             // --- Progresso da Presale (ETH vs MaxCap) ---
-            const presalePct = Number(presaleProgress.toString());
-            elements.presaleProgressFill.style.width = Math.min(presalePct, 100) + "%";
-            elements.presaleProgressLabel.innerText = `${presalePct.toFixed(2)}%`;
-            elements.presaleProgressText.innerText = `${presalePct.toFixed(2)}%`;
+            if (elements.presaleProgressFill) elements.presaleProgressFill.style.width = Math.min(presalePct, 100) + "%";
+            if (elements.presaleProgressLabel) elements.presaleProgressLabel.innerText = `${presalePct.toFixed(2)}%`;
+            if (elements.presaleProgressText) elements.presaleProgressText.innerText = `${presalePct.toFixed(2)}%`;
 
 
             // --- Progresso do Market Cap Alvo (USD) ---
             const marketCapProgressPct = (marketCapCurrentUSD / MARKET_CAP_GOAL_USD) * 100;
-            elements.marketCapProgressFill.style.width = Math.min(marketCapProgressPct, 100) + "%";
-            elements.marketCapProgressLabel.innerText = `${marketCapProgressPct.toFixed(2)}%`;
-            elements.marketCapProgressText.innerText = `${marketCapProgressPct.toFixed(2)}%`;
+            if (elements.marketCapProgressFill) elements.marketCapProgressFill.style.width = Math.min(marketCapProgressPct, 100) + "%";
+            if (elements.marketCapProgressLabel) elements.marketCapProgressLabel.innerText = `${marketCapProgressPct.toFixed(2)}%`;
+            if (elements.marketCapProgressText) elements.marketCapProgressText.innerText = `${marketCapProgressPct.toFixed(2)}%`;
 
 
             // --- Verificação de Estado ---
+            if (!elements.buyBtn) return; // Se o botão não existe, para aqui.
+
             if (!isActive || presalePct >= 100) {
                 setStatus("Presale Finalizada ou Inativa!", true);
                 elements.buyBtn.disabled = true;
@@ -449,6 +455,7 @@ function initDApp() {
     // 3. Comprar tokens (Envia transação)
     async function buyTokens() {
         if (!signer) return setStatus("Conecte a MetaMask primeiro.", true);
+        if (!elements.ethAmountInput) return setStatus("Erro de inicialização: Campo de ETH não encontrado.", true);
         
         const ethAmount = elements.ethAmountInput.value;
         if (!ethAmount || parseFloat(ethAmount) <= 0) return setStatus("Insira um valor válido de ETH.", true);
