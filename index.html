@@ -9,9 +9,9 @@
     body {
         margin: 0;
         padding: 0;
-        background: black;
+        background: #0a0a0a;
         color: #00ff9f;
-        font-family: Arial, sans-serif;
+        font-family: 'Orbitron', sans-serif;
         overflow-x: hidden;
     }
 
@@ -34,23 +34,28 @@
         height: auto;
         margin-bottom: 20px;
         border-radius: 12px;
-        box-shadow: 0 0 20px #00ff9f;
+        box-shadow: 0 0 30px #00ff9f;
     }
 
     h1 {
-        font-size: 42px;
+        font-size: 48px;
         color: #00ffaa;
-        text-shadow: 0 0 10px #00ff99;
+        text-shadow: 0 0 20px #00ff99;
     }
 
     .card {
-        background: rgba(0, 0, 0, 0.55);
+        background: rgba(0,0,0,0.65);
         border: 1px solid #00ff88;
-        max-width: 420px;
+        max-width: 500px;
         margin: 20px auto;
-        padding: 25px;
+        padding: 30px;
         border-radius: 12px;
-        box-shadow: 0 0 20px #00ff66;
+        box-shadow: 0 0 25px #00ff66;
+    }
+
+    .info {
+        margin: 8px 0;
+        font-size: 18px;
     }
 
     button {
@@ -63,24 +68,53 @@
         cursor: pointer;
         transition: 0.3s;
         font-weight: bold;
+        margin: 5px;
     }
 
     button:hover {
-        background: red;
+        background: #ff0055;
         color: white;
-        box-shadow: 0 0 20px red;
-    }
-
-    .info {
-        margin: 8px 0;
-        font-size: 18px;
+        box-shadow: 0 0 25px #ff0055;
     }
 
     .countdown {
-        font-size: 22px;
+        font-size: 24px;
         margin-bottom: 20px;
         font-weight: bold;
         color: #ff4444;
+        text-shadow: 0 0 10px #ff4444;
+    }
+
+    .progress-container {
+        background: rgba(0,0,0,0.2);
+        border-radius: 12px;
+        margin: 20px auto;
+        width: 90%;
+        height: 25px;
+        border: 1px solid #00ff88;
+    }
+
+    .progress-bar {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #00ff9f, #00ffaa);
+        border-radius: 12px;
+        transition: width 0.5s ease;
+        box-shadow: 0 0 15px #00ff9f;
+    }
+
+    input[type="number"] {
+        padding:10px;
+        font-size:16px;
+        width:80%;
+        border-radius:8px;
+        margin: 10px 0;
+    }
+
+    .market-info {
+        font-size: 18px;
+        margin: 5px 0;
+        color: #00ffcc;
     }
 </style>
 </head>
@@ -99,115 +133,4 @@
 
     <div class="card">
         <div class="info">Token: PILL</div>
-        <div class="info">Preço presale: 1 ETH = 1000 PILL</div>
-        <div class="info">Taxa: 10%</div>
-        <div class="info">Supply: 1000 PILL</div>
-        <div class="info">Min Buy: 0.01 ETH</div>
-        <div class="info">Max Buy: 5 ETH</div>
-
-        <button onclick="connect()">Conectar MetaMask</button>
-        <br/><br/>
-
-        <input id="ethAmount" type="number" placeholder="ETH para comprar" style="padding:10px;font-size:16px;width:80%;border-radius:8px;"><br><br>
-
-        <button onclick="buyToken()">Comprar Token</button>
-
-    </div>
-
-</div>
-
-<script>
-    /* MATRIX BACKGROUND EFFECT */
-    const canvas = document.getElementById("matrixBG");
-    const ctx = canvas.getContext("2d");
-
-    canvas.height = window.innerHeight;
-    canvas.width = window.innerWidth;
-
-    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    const fontSize = 14;
-    const columns = canvas.width / fontSize;
-
-    const drops = [];
-    for (let i = 0; i < columns; i++) drops[i] = 1;
-
-    function draw() {
-        ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.fillStyle = "#00ff99";
-        ctx.font = fontSize + "px arial";
-
-        for (let i = 0; i < drops.length; i++) {
-            const text = letters.charAt(Math.floor(Math.random() * letters.length));
-            ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-
-            if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-
-            drops[i]++;
-        }
-    }
-
-    setInterval(draw, 33);
-
-    /* COUNTDOWN TIMER */
-    const startTime = new Date("December 10, 2025 08:00:00 GMT-3").getTime();
-    const endTime = new Date("December 10, 2025 13:00:00 GMT-3").getTime();
-
-    setInterval(() => {
-        const now = new Date().getTime();
-
-        if (now < startTime) {
-            document.getElementById("countdown").innerHTML = "Presale começa em: " + format(startTime - now);
-        } else if (now < endTime) {
-            document.getElementById("countdown").innerHTML = "Presale termina em: " + format(endTime - now);
-        } else {
-            document.getElementById("countdown").innerHTML = "Presale encerrada";
-        }
-    }, 1000);
-
-    function format(ms) {
-        const h = Math.floor(ms / (1000 * 60 * 60));
-        const m = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-        const s = Math.floor((ms % (1000 * 60)) / 1000);
-        return `${h}h ${m}m ${s}s`;
-    }
-
-    /* WALLET + BUY FUNCTION */
-
-    let account;
-
-    async function connect() {
-        if (!window.ethereum) {
-            alert("Instale MetaMask.");
-            return;
-        }
-        const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-        account = accounts[0];
-        alert("Conectado: " + account);
-    }
-
-    async function buyToken() {
-        if (!account) return alert("Conecte primeiro sua carteira.");
-
-        const amount = document.getElementById("ethAmount").value;
-
-        if (amount <= 0) return alert("Valor inválido.");
-
-        const contract = "0x72A9a07EC3Fdd4A58332C5ED37F6d35a72d541c9";
-
-        await ethereum.request({
-            method: "eth_sendTransaction",
-            params: [{
-                from: account,
-                to: contract,
-                value: "0x" + (BigInt(amount * 1e18)).toString(16)
-            }]
-        });
-
-        alert("Compra enviada para a blockchain.");
-    }
-</script>
-
-</body>
-</html>
+        <div class="market-info" id="tokenPrice">Preço atual: 1 USD ≈ 0.001 ETH</div>
