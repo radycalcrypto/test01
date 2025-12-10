@@ -1,259 +1,363 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Rady Presale</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+// Pill Launch Page - Single-file React component
+// TailwindCSS required in host app. Assumes ethers.js is available globally (imported).
+// Designed to be dropped into a React app (Vite/Create React App/Next.js) that supports Tailwind.
+// Colors: black background, neon green & red accents, matrix-style background animation.
+// Connects to Metamask, reads presale info from launchpad contract, shows dynamic price, progress, countdown, buys via buy() payable.
 
-<style>
-    body {
-        background: #000814;
-        color: #bde0fe;
-        font-family: Arial, sans-serif;
-        margin: 0;
-        padding: 0;
-        text-align: center;
-    }
+import React, { useEffect, useState, useMemo } from "react";
+import { ethers } from "ethers";
 
-    h1 {
-        margin-top: 40px;
-        color: #48cae4;
-        font-size: 32px;
-        text-shadow: 0 0 10px #48cae4;
-    }
-
-    .container {
-        width: 90%;
-        max-width: 450px;
-        margin: 30px auto;
-        padding: 30px;
-        background: rgba(10, 20, 40, 0.6);
-        border: 1px solid #48cae4;
-        border-radius: 12px;
-        box-shadow: 0 0 20px #0096c7;
-    }
-
-    input {
-        width: 90%;
-        padding: 12px;
-        margin-top: 10px;
-        border: none;
-        border-radius: 8px;
-        background: #001d3d;
-        color: #caf0f8;
-        font-size: 16px;
-    }
-
-    button {
-        width: 95%;
-        padding: 12px;
-        background: #0077b6;
-        border: none;
-        border-radius: 8px;
-        color: white;
-        margin-top: 20px;
-        cursor: pointer;
-        font-weight: bold;
-        font-size: 18px;
-        box-shadow: 0 0 10px #0096c7;
-    }
-    button:hover {
-        background: #00b4d8;
-    }
-
-    #status {
-        margin-top: 20px;
-        font-size: 16px;
-        color: #90e0ef;
-        min-height: 25px;
-    }
-
-    .countdown {
-        font-size: 20px;
-        margin-top: 20px;
-        color: #48cae4;
-        text-shadow: 0 0 6px #48cae4;
-    }
-
-    /* POPUP */
-    .popup {
-        position: fixed;
-        top: 40%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: #03045e;
-        padding: 20px;
-        border: 2px solid #90e0ef;
-        border-radius: 12px;
-        display: none;
-        box-shadow: 0 0 20px #00b4d8;
-        color: #caf0f8;
-    }
-</style>
-</head>
-<body>
-
-<h1>Rady Pre-Sale</h1>
-
-<div class="container">
-    <h3>Comprar Tokens Rady</h3>
-
-    <!-- Entrada quantidade de tokens -->
-    <input type="number" id="tokenAmount" placeholder="Quantidade de tokens">
-
-    <!-- Preço por token (puxado do contrato depois) -->
-    <p id="ethCost">Valor em ETH: 0</p>
-
-    <button onclick="buyTokens()">Comprar</button>
-
-    <button onclick="claimTokens()">Claim (Liberar Tokens)</button>
-
-    <div class="countdown">
-        <p><b>Presale termina em:</b></p>
-        <span id="timer">Carregando...</span>
-    </div>
-
-    <div id="status"></div>
-</div>
-
-<!-- POPUP FUNDS -->
-<div id="popupFunds" class="popup">⚠️ Fundos insuficientes!</div>
-
-<!-- POPUP CLAIM ERROR -->
-<div id="popupClaim" class="popup">⚠️ Claim ainda não liberado!</div>
-
-<script>
-/* ------------------------------
-   CONFIGURAÇÃO DOS CONTRATOS
---------------------------------*/
-const PRESALE_ADDRESS = "0xA34825C95aD8EE3552d2865A1368B8124DD30234";
-const TOKEN_ADDRESS   = "0x1955405e6EdB21560889422f86365fd0C6deC998";
-
-/* ABI SIMPLIFICADA */
-const presaleABI = [
-    "function buyTokens(uint256 amount) payable",
-    "function claimTokens()",
-    "function tokenPrice() view returns(uint256)",
-    "function presaleEnd() view returns(uint256)"
+// =========================
+// CONFIG
+// =========================
+const LAUNCHPAD_ADDRESS = "0x72A9a07EC3Fdd4A58332C5ED37F6d35a72d541c9";
+const TOKEN_ADDRESS = "0xeecc2eb7645a86549321433511b61866eeb13611";
+// Minimal ABI for the launchpad contract (read-only + buy)
+const LAUNCHPAD_ABI = [
+  "function presaleRate() view returns (uint256)",
+  "function listingRate() view returns (uint256)",
+  "function totalETH() view returns (uint256)",
+  "function softCap() view returns (uint256)",
+  "function hardCap() view returns (uint256)",
+  "function minBuy() view returns (uint256)",
+  "function maxBuy() view returns (uint256)",
+  "function startTime() view returns (uint256)",
+  "function endTime() view returns (uint256)",
+  "function feePercent() view returns (uint256)",
+  "function liquidityPercent() view returns (uint256)",
+  "function contributions(address) view returns (uint256)",
+  "function buy() payable",
 ];
 
-/* ------------------------------
-   CONECTAR WALLET
---------------------------------*/
-let provider;
-let signer;
-let presale;
+const TOKEN_ABI = [
+  "function decimals() view returns (uint8)",
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function balanceOf(address) view returns (uint256)",
+];
 
-async function connect() {
+// =========================
+// Helper functions
+// =========================
+function formatEtherBig(value) {
+  try {
+    return ethers.utils.formatEther(value);
+  } catch (e) {
+    return "0";
+  }
+}
+
+function formatNumber(n, digits = 2) {
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+function secondsToDHMS(seconds) {
+  seconds = Math.max(0, Math.floor(seconds));
+  const d = Math.floor(seconds / (3600 * 24));
+  const h = Math.floor((seconds % (3600 * 24)) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return { d, h, m, s };
+}
+
+// =========================
+// React component
+// =========================
+export default function PillLaunchPage() {
+  const [provider, setProvider] = useState(null);
+  const [signer, setSigner] = useState(null);
+  const [account, setAccount] = useState(null);
+  const [network, setNetwork] = useState(null);
+
+  const [launchpad, setLaunchpad] = useState(null);
+  const [token, setToken] = useState(null);
+
+  const [info, setInfo] = useState({});
+  const [now, setNow] = useState(Math.floor(Date.now() / 1000));
+
+  const [buyAmountETH, setBuyAmountETH] = useState(0.05);
+  const [txStatus, setTxStatus] = useState(null);
+
+  // Connect to MetaMask
+  async function connectWallet() {
     if (!window.ethereum) {
-        alert("MetaMask não detectada.");
-        return;
+      alert('MetaMask not found. Install or enable a provider.');
+      return;
     }
+    const p = new ethers.providers.Web3Provider(window.ethereum, "any");
+    await p.send("eth_requestAccounts", []);
+    const s = p.getSigner();
+    const addr = await s.getAddress();
+    const net = await p.getNetwork();
 
-    provider = new ethers.BrowserProvider(window.ethereum);
-    signer = await provider.getSigner();
-    presale = new ethers.Contract(PRESALE_ADDRESS, presaleABI, signer);
+    setProvider(p);
+    setSigner(s);
+    setAccount(addr);
+    setNetwork(net);
+  }
 
-    document.getElementById("status").innerText = "Wallet conectada!";
-    loadPresaleData();
-}
+  // Initialize contracts
+  useEffect(() => {
+    if (!provider) return;
+    const lp = new ethers.Contract(LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, provider);
+    const tk = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, provider);
+    setLaunchpad(lp);
+    setToken(tk);
+  }, [provider]);
 
-connect();
-
-/* ------------------------------
-   ATUALIZAR PREÇO EM TEMPO REAL
---------------------------------*/
-async function loadPresaleData() {
-    const price = await presale.tokenPrice();
-    window.tokenPrice = price / 1e18;
-
-    const end = await presale.presaleEnd();
-    startCountdown(Number(end));
-}
-
-document.getElementById("tokenAmount").addEventListener("input", () => {
-    const qty = document.getElementById("tokenAmount").value;
-    const ethValue = qty * window.tokenPrice;
-    document.getElementById("ethCost").innerText = "Valor em ETH: " + ethValue.toFixed(6);
-});
-
-/* ------------------------------
-   COMPRAR TOKENS
---------------------------------*/
-async function buyTokens() {
+  // Fetch static/dynamic info from contract
+  async function fetchInfo() {
+    if (!launchpad || !token) return;
     try {
-        const qty = document.getElementById("tokenAmount").value;
-        if (qty <= 0) return;
+      const [presaleRate, listingRate, totalETH, softCap, hardCap, minBuy, maxBuy, startTime, endTime, feePercent, liquidityPercent] = await Promise.all([
+        launchpad.presaleRate(),
+        launchpad.listingRate(),
+        launchpad.totalETH(),
+        launchpad.softCap(),
+        launchpad.hardCap(),
+        launchpad.minBuy(),
+        launchpad.maxBuy(),
+        launchpad.startTime(),
+        launchpad.endTime(),
+        launchpad.feePercent(),
+        launchpad.liquidityPercent(),
+      ]);
 
-        const value = qty * window.tokenPrice;
+      const [decimals, name, symbol] = await Promise.all([
+        token.decimals(),
+        token.name(),
+        token.symbol(),
+      ]);
 
-        const tx = await presale.buyTokens(
-            qty,
-            { value: ethers.parseEther(value.toString()) }
-        );
-
-        document.getElementById("status").innerText = "Processando compra...";
-        await tx.wait();
-
-        document.getElementById("status").innerText = "Compra concluída!";
+      setInfo({ presaleRate, listingRate, totalETH, softCap, hardCap, minBuy, maxBuy, startTime, endTime, feePercent, liquidityPercent, decimals, name, symbol });
+    } catch (e) {
+      console.error('fetchInfo error', e);
     }
-    catch (err) {
-        if (err.message.includes("insufficient funds")) {
-            showPopup("popupFunds");
-            return;
-        }
-        document.getElementById("status").innerText = "Erro: " + err.message;
-    }
-}
+  }
 
-/* ------------------------------
-   CLAIM TOKENS
---------------------------------*/
-async function claimTokens() {
+  // polling clock and info
+  useEffect(() => {
+    fetchInfo();
+    const t1 = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    const t2 = setInterval(() => fetchInfo(), 15000); // refresh every 15s
+    return () => { clearInterval(t1); clearInterval(t2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [launchpad, token]);
+
+  // Derived values
+  const presaleRateNum = useMemo(() => {
+    if (!info.presaleRate || !info.decimals) return 0;
     try {
-        const tx = await presale.claimTokens();
-        document.getElementById("status").innerText = "Processando claim...";
-        await tx.wait();
-
-        document.getElementById("status").innerText = "Claim concluído!";
+      // presaleRate is tokens per 1 ETH with token precision multiplied by 1 ether
+      // e.g., if presaleRate = 1000 * 1e18, then tokens per ETH = 1000
+      return Number(ethers.utils.formatUnits(info.presaleRate.toString(), 18 - 0));
+    } catch (e) {
+      return 0;
     }
-    catch (err) {
-        showPopup("popupClaim");
+  }, [info]);
+
+  const salePhase = useMemo(() => {
+    if (!info.startTime || !info.endTime) return 'unknown';
+    if (now < Number(info.startTime)) return 'upcoming';
+    if (now >= Number(info.startTime) && now <= Number(info.endTime)) return 'live';
+    return 'ended';
+  }, [info, now]);
+
+  const timeLeft = useMemo(() => {
+    if (!info.endTime) return 0;
+    return Math.max(0, Number(info.endTime) - now);
+  }, [info, now]);
+
+  // Progress toward softCap/hardCap
+  const progress = useMemo(() => {
+    try {
+      const total = Number(ethers.utils.formatEther(info.totalETH || 0));
+      const soft = Number(ethers.utils.formatEther(info.softCap || 0)) || 0;
+      const hard = Number(ethers.utils.formatEther(info.hardCap || 0)) || 0;
+      const pctSoft = soft > 0 ? Math.min(100, (total / soft) * 100) : 0;
+      const pctHard = hard > 0 ? Math.min(100, (total / hard) * 100) : 0;
+      return { total, soft, hard, pctSoft, pctHard };
+    } catch (e) {
+      return { total: 0, soft: 0, hard: 0, pctSoft: 0, pctHard: 0 };
     }
+  }, [info]);
+
+  // Buy function (uses signer)
+  async function buy() {
+    if (!signer) { alert('Conecte a carteira'); return; }
+    try {
+      setTxStatus('sending');
+      const contractWithSigner = new ethers.Contract(LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, signer);
+      const value = ethers.utils.parseEther(String(buyAmountETH));
+      const tx = await contractWithSigner.buy({ value });
+      setTxStatus('pending');
+      await tx.wait();
+      setTxStatus('confirmed');
+      setBuyAmountETH(0.05);
+      fetchInfo();
+    } catch (e) {
+      console.error('buy error', e);
+      setTxStatus('error');
+      alert(e?.data?.message || e?.message || 'Erro ao enviar transacao');
+    }
+  }
+
+  // UI pieces
+  const countdown = secondsToDHMS(timeLeft);
+
+  return (
+    <div className="min-h-screen text-white bg-black relative overflow-hidden font-sans">
+      {/* Matrix style animated background */}
+      <div className="absolute inset-0 pointer-events-none">
+        <canvas id="matrixCanvas" className="w-full h-full opacity-20"></canvas>
+      </div>
+
+      <div className="relative z-10 container mx-auto px-4 py-12">
+        <div className="max-w-4xl mx-auto bg-[rgba(0,0,0,0.6)] backdrop-blur-sm rounded-2xl border border-[#0f0f0f] p-8 shadow-2xl">
+          <header className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              {/* Pill logo */}
+              <div className="w-14 h-14 rounded-full flex items-center justify-center bg-gradient-to-br from-green-500 to-red-500 shadow-lg">
+                <svg viewBox="0 0 64 64" className="w-10 h-10 drop-shadow-md">
+                  <defs>
+                    <linearGradient id="g1" x1="0%" x2="100%" y1="0%" y2="100%">
+                      <stop offset="0%" stopColor="#22c55e" />
+                      <stop offset="100%" stopColor="#ef4444" />
+                    </linearGradient>
+                  </defs>
+                  <rect x="6" y="20" width="52" height="24" rx="12" fill="url(#g1)" />
+                  <circle cx="22" cy="32" r="10" fill="#071013" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">Pill test — Fair Launch</h1>
+                <p className="text-sm text-gray-300">Token: PILL • Launchpad minimalista</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="text-xs text-gray-400">Connected</div>
+                <div className="text-sm font-mono">{account ? `${account.slice(0,6)}...${account.slice(-4)}` : 'Not connected'}</div>
+              </div>
+              <button onClick={() => account ? (setAccount(null), setProvider(null)) : connectWallet()} className="px-4 py-2 rounded-md bg-[#0f172a] border border-[#064e3b] hover:bg-[#06121a]">
+                {account ? 'Disconnect' : 'Connect Wallet'}
+              </button>
+            </div>
+          </header>
+
+          <main className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Left: sale info */}
+            <section className="md:col-span-2 bg-[rgba(255,255,255,0.02)] p-6 rounded-xl border border-[#06303a]">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold">Sale Status</h2>
+                  <div className="text-sm text-gray-300">{salePhase === 'upcoming' ? 'Upcoming' : salePhase === 'live' ? 'Live' : 'Ended'}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-400">Fee</div>
+                  <div className="text-sm">{info.feePercent ?? '--'}%</div>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <div className="w-full bg-[#04110b] rounded-full h-4 overflow-hidden">
+                  <div style={{ width: `${progress.pctHard}%` }} className={`h-4 rounded-full ${progress.pctHard >= 100 ? 'bg-red-600' : 'bg-green-500'}`}></div>
+                </div>
+                <div className="mt-2 text-xs text-gray-400 flex justify-between">
+                  <div>Raised: {formatNumber(progress.total)} ETH</div>
+                  <div>SoftCap: {formatNumber(progress.soft)} ETH</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-[rgba(0,0,0,0.35)] rounded-md">
+                  <div className="text-xs text-gray-400">Price (presale)</div>
+                  <div className="text-xl font-semibold">{presaleRateNum ? `${formatNumber(presaleRateNum)} ${info.symbol ?? ''} / ETH` : '--'}</div>
+                </div>
+                <div className="p-4 bg-[rgba(0,0,0,0.35)] rounded-md">
+                  <div className="text-xs text-gray-400">Min / Max Buy</div>
+                  <div className="text-lg">{info.minBuy ? `${formatNumber(ethers.utils.formatEther(info.minBuy))} / ${info.maxBuy ? formatNumber(ethers.utils.formatEther(info.maxBuy)) : 'No limit'} ETH` : '--'}</div>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-gradient-to-b from-black/50 to-black/20 rounded-md border border-[#06303a]">
+                <div className="text-sm text-gray-300 mb-2">Countdown to end</div>
+                <div className="flex items-center gap-4">
+                  <div className="text-3xl font-mono">{`${countdown.h.toString().padStart(2,'0')}:${countdown.m.toString().padStart(2,'0')}:${countdown.s.toString().padStart(2,'0')}`}</div>
+                  <div className="text-sm text-gray-400">({salePhase === 'live' ? 'Live now' : salePhase === 'upcoming' ? 'Upcoming' : 'Sale ended'})</div>
+                </div>
+
+                <div className="mt-4 text-xs text-gray-400">End time (UTC): {info.endTime ? new Date(Number(info.endTime) * 1000).toUTCString() : '--'}</div>
+              </div>
+
+            </section>
+
+            {/* Right: buy panel */}
+            <aside className="p-6 bg-[rgba(0,0,0,0.6)] rounded-xl border border-[#06303a]">
+              <div className="text-sm text-gray-400 mb-3">Buy PILL</div>
+
+              <div className="mb-3">
+                <label className="text-xs text-gray-300">Amount (ETH)</label>
+                <input type="number" step="0.001" value={buyAmountETH} onChange={(e) => setBuyAmountETH(Number(e.target.value))} className="w-full mt-2 p-3 rounded-md bg-[#071013] text-white outline-none" />
+              </div>
+
+              <div className="mb-4 text-sm text-gray-300">You will receive approx: <span className="font-semibold">{presaleRateNum ? formatNumber(buyAmountETH * presaleRateNum) : '--'} {info.symbol ?? ''}</span></div>
+
+              <button disabled={!account || salePhase !== 'live'} onClick={buy} className={`w-full py-3 rounded-md font-semibold ${!account || salePhase !== 'live' ? 'bg-gray-600 cursor-not-allowed' : 'bg-gradient-to-r from-green-500 to-red-500 hover:from-green-600'}`}>
+                {txStatus === 'sending' || txStatus === 'pending' ? 'Processing...' : (salePhase === 'live' ? 'Buy with MetaMask' : (salePhase === 'upcoming' ? 'Sale not started' : 'Sale ended'))}
+              </button>
+
+              <div className="mt-4 text-xs text-gray-400">
+                Launchpad: <span className="font-mono">{LAUNCHPAD_ADDRESS}</span>
+                <br />Token: <span className="font-mono">{TOKEN_ADDRESS}</span>
+              </div>
+
+            </aside>
+          </main>
+
+          <footer className="mt-8 text-center text-xs text-gray-500">Designed with minimal, matrix-style visuals. Use responsibly. Audit recommended before mainnet use.</footer>
+        </div>
+      </div>
+
+      {/* Inline script for matrix background - will run in browser */}
+      <MatrixScript />
+    </div>
+  );
 }
 
-/* ------------------------------
-   POPUPS
---------------------------------*/
-function showPopup(id) {
-    const el = document.getElementById(id);
-    el.style.display = "block";
-    setTimeout(() => { el.style.display = "none"; }, 2500);
+// Small component that injects a matrix-style canvas script
+function MatrixScript() {
+  useEffect(() => {
+    const canvas = document.getElementById('matrixCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const resize = () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const fontSize = 14;
+    const columns = Math.floor(canvas.width / fontSize);
+    const drops = new Array(columns).fill(0).map(() => Math.random() * canvas.height);
+
+    let raf;
+    const draw = () => {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(34,197,94,0.9)';
+      ctx.font = fontSize + 'px monospace';
+      for (let i = 0; i < columns; i++) {
+        const text = letters.charAt(Math.floor(Math.random() * letters.length));
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+        drops[i] += 0.5 + Math.random() * 0.5;
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+  }, []);
+
+  return null;
 }
-
-/* ------------------------------
-   COUNTDOWN
---------------------------------*/
-function startCountdown(endTime) {
-    setInterval(() => {
-        const now = Math.floor(Date.now() / 1000);
-        const diff = endTime - now;
-
-        if (diff <= 0) {
-            document.getElementById("timer").innerText = "Presale encerrada!";
-            return;
-        }
-
-        const d = Math.floor(diff / 86400);
-        const h = Math.floor((diff % 86400) / 3600);
-        const m = Math.floor((diff % 3600) / 60);
-        const s = diff % 60;
-
-        document.getElementById("timer").innerText =
-            `${d}d ${h}h ${m}m ${s}s`;
-    }, 1000);
-}
-</script>
-
-</body>
-</html>
