@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PILL Token Presale Test</title>
+<title>PILL Token Presale</title>
 <style>
 body { margin:0; font-family:'Courier New', monospace; background:black; color:#00ff00; overflow-x:hidden; }
 canvas { position:fixed; top:0; left:0; z-index:-1; }
@@ -48,7 +48,6 @@ input[type="number"] { padding:10px; font-size:1em; width:150px; border-radius:8
   </div>
 </div>
 
-<!-- ===== Carregando ethers.js ===== -->
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 
 <script>
@@ -77,30 +76,28 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   setInterval(drawMatrix,50);
 
-  // ===== MetaMask Connection =====
+  // ===== MetaMask =====
   let provider, signer, userAddress;
-
   async function connectWallet() {
     try {
-      if (!window.ethereum) throw new Error("MetaMask não detectada!");
+      if(!window.ethereum) throw new Error("MetaMask não detectada!");
       await window.ethereum.request({ method: 'eth_requestAccounts' });
       provider = new ethers.providers.Web3Provider(window.ethereum);
       signer = provider.getSigner();
       userAddress = await signer.getAddress();
       document.getElementById('connectWallet').innerText = 'Wallet Conectada';
-      console.log('Conectado como:', userAddress);
+      console.log('Conectado:', userAddress);
     } catch(err) {
-      console.error('Erro ao conectar MetaMask:', err);
+      console.error('Erro MetaMask:', err);
       alert('Erro ao conectar MetaMask! Veja console.');
     }
   }
   document.getElementById('connectWallet').addEventListener('click', connectWallet);
 
-  // ===== Configurações Presale =====
-  const PRESALE_ADDRESS = "0xSEU_CONTRATO_AQUI"; // Substitua pelo endereço real
-  const PRESALE_ABI = [ /* Cole a ABI do contrato aqui */ ];
+  // ===== Presale Config =====
+  const PRESALE_ADDRESS = "0xSEU_CONTRATO_AQUI";
+  const PRESALE_ABI = [ /* Cole ABI aqui */ ];
 
-  // ===== Variáveis UI =====
   let tokenPrice = 1.0;
   let totalRaised = 0;
   let tokensSold = 0;
@@ -117,7 +114,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('claimProgress').innerText = Math.floor(percent) + '%';
   }
 
-  // ===== Função de compra real =====
+  // ===== Buy Token =====
   async function buyTokens() {
     if(!signer) return alert('Conecte a MetaMask primeiro!');
     const ethAmount = parseFloat(document.getElementById('ethAmount').value);
@@ -130,7 +127,6 @@ window.addEventListener('DOMContentLoaded', () => {
       await tx.wait();
       console.log("Transação confirmada!");
 
-      // Atualiza UI após confirmação
       const tokensSoldRaw = await contract.tokensSold();
       const totalRaisedRaw = await contract.totalRaisedUSD();
       const tokenPriceRaw = await contract.tokenPriceUSD();
@@ -146,13 +142,10 @@ window.addEventListener('DOMContentLoaded', () => {
       alert("Erro ao comprar tokens. Veja console.");
     }
   }
-
   document.getElementById('buyTokens').addEventListener('click', buyTokens);
 
   updateUI();
-
 });
 </script>
-
 </body>
 </html>
