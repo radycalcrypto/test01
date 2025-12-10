@@ -6,18 +6,24 @@
 <title>PILL Pre-Sale</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
 <style>
-body { margin:0; padding:0; background:black; color:#00ffbf; font-family:Arial,sans-serif; }
+body { margin:0; padding:0; background:black; color:#00ffbf; font-family:Arial,sans-serif; overflow-x:hidden; }
+canvas#matrix { position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:-1; }
 .container { max-width:500px; margin:auto; padding:30px; text-align:center; }
-button { padding:12px; margin-top:12px; border-radius:10px; border:none; cursor:pointer; background:#00ffbf; color:black; font-weight:bold; width:90%; }
-button:hover { background:#ff0066; color:white; }
-.card { margin-top:20px; padding:20px; border-radius:12px; background:rgba(0,0,0,0.6); border:1px solid #00ffbf; }
+h1 { color:#00ffc3; text-shadow:0 0 10px #00ffbd; }
+.card { margin-top:20px; padding:20px; border-radius:12px; background:rgba(0,0,0,0.6); border:1px solid #00ffbf; box-shadow:0 0 20px #00ffaa; }
+button { width:90%; padding:14px; margin-top:12px; border:0; border-radius:10px; font-size:17px; font-weight:bold; cursor:pointer; background:#00ffbf; color:black; transition:0.3s; }
+button:hover { background:#ff0066; color:white; box-shadow:0 0 20px #ff0066; }
 .progressBox { width:100%; height:22px; background:#222; border-radius:12px; margin-top:12px; overflow:hidden; border:1px solid #00ffbf; }
-.progressFill { height:100%; width:0%; background:#00ffaa; transition:0.4s; }
+.progressFill { height:100%; width:0%; background:#00ffaa; box-shadow:0 0 10px #00ffaa; transition:0.4s; }
+#priceDisplay { font-size:21px; font-weight:bold; margin-top:10px; color:#00ffea; text-shadow:0 0 10px #00fff0; }
 </style>
 </head>
 <body>
+
+<canvas id="matrix"></canvas>
+
 <div class="container">
-<h1>PILL Pre-Sale</h1>
+<h1>PILL PRE-SALE</h1>
 <button id="connectBtn">Conectar MetaMask</button>
 <div class="card">
 <div id="priceDisplay">Preço: --</div>
@@ -31,7 +37,32 @@ button:hover { background:#ff0066; color:white; }
 </div>
 
 <script>
-const CONTRACT_ADDRESS = "0x6754c0f28ab363Ed6090843baeAb201C3CaCD96D";
+// ================= MATRIX BACKGROUND =================
+const canvas = document.getElementById("matrix");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const fontSize = 14;
+const columns = canvas.width / fontSize;
+const drops = Array.from({length:columns},()=>1);
+function drawMatrix(){
+    ctx.fillStyle = "rgba(0,0,0,0.05)";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "#00ffbf";
+    ctx.font = fontSize+"px monospace";
+    for(let i=0;i<drops.length;i++){
+        const text = chars.charAt(Math.floor(Math.random()*chars.length));
+        ctx.fillText(text,i*fontSize,drops[i]*fontSize);
+        if(drops[i]*fontSize>canvas.height && Math.random()>0.975) drops[i]=0;
+        drops[i]++;
+    }
+}
+setInterval(drawMatrix,33);
+
+// ================== METAMASK + ETHERS ==================
+let provider, signer, launchpad, account;
+const LAUNCHPAD_ADDRESS = "0x6754c0f28ab363Ed6090843baeAb201C3CaCD96D";
 const abi = [
     "function buyTokens() payable",
     "function claim()",
@@ -41,77 +72,66 @@ const abi = [
     "function maxCapETH() view returns(uint256)"
 ];
 
-let provider, signer, launchpad, account;
-
-// Conectar MetaMask
-async function connectWallet() {
-    if(typeof window.ethereum === 'undefined') {
-        alert("MetaMask não detectada! Instale e desbloqueie.");
-        return;
-    }
-
-    try {
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
+// ---------- CONECTAR META MASK -----------
+async function connectWallet(){
+    if(typeof window.ethereum==='undefined'){ alert("MetaMask não detectada!"); return; }
+    try{
+        const accounts = await window.ethereum.request({method:'eth_requestAccounts'});
+        account = accounts[0];
         provider = new ethers.providers.Web3Provider(window.ethereum);
         signer = provider.getSigner();
-        account = await signer.getAddress();
-
-        launchpad = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
-
-        document.getElementById("connectBtn").innerText = "Conectado: " + account.substring(0,6) + "..." + account.slice(-4);
-        document.getElementById("connectBtn").style.background = "#00ffaa";
-
+        launchpad = new ethers.Contract(LAUNCHPAD_ADDRESS, abi, signer);
+        document.getElementById("connectBtn").innerText = "Conectado: "+account.substring(0,6)+"..."+account.slice(-4);
+        document.getElementById("connectBtn").style.background="#00ffaa";
         updateUI();
-    } catch(err) {
-        console.error(err);
-        alert("Erro ao conectar MetaMask! Veja console.");
-    }
+    }catch(err){ console.error(err); alert("Erro ao conectar MetaMask! Veja console."); }
 }
 
-// Atualizar UI
-async function updateUI() {
+// ---------- ATUALIZAR UI -----------
+async function updateUI(){
     if(!launchpad) return;
-    try {
+    try{
         const sold = await launchpad.tokensSold();
         const raised = await launchpad.totalRaisedETH();
         const price = await launchpad.tokenPrice();
         const maxCap = await launchpad.maxCapETH();
 
-        document.getElementById("progressText").innerText = "Tokens Vendidos: " + ethers.utils.formatUnits(sold,18);
+        document.getElementById("progressText").innerText = "Tokens Vendidos: "+ethers.utils.formatUnits(sold,18);
         const pct = Number(raised)/Number(maxCap)*100;
-        document.getElementById("progressFill").style.width = pct + "%";
-        document.getElementById("priceDisplay").innerText = "Preço atual: " + (Number(price)/1e18).toFixed(6) + " ETH";
-        document.getElementById("marketCap").innerText = "Market Cap: " + (Number(price)/1e18 * Number(sold)/1e18).toFixed(4) + " ETH";
-    } catch(err){ console.error(err); }
+        document.getElementById("progressFill").style.width = pct+"%";
+        document.getElementById("priceDisplay").innerText = "Preço atual: "+(Number(price)/1e18).toFixed(6)+" ETH";
+        document.getElementById("marketCap").innerText = "Market Cap: "+((Number(price)/1e18)*(Number(sold)/1e18)).toFixed(4)+" ETH";
+    }catch(err){ console.error(err); }
 }
 
-// Comprar Tokens
-document.getElementById("buyBtn").addEventListener("click", async ()=>{
-    if(!signer) return alert("Conecte MetaMask primeiro!");
+// ---------- COMPRAR TOKENS -----------
+document.getElementById("buyBtn").addEventListener("click",async()=>{
+    if(!signer) return alert("Conecte a MetaMask primeiro!");
     const ethAmount = document.getElementById("ethAmount").value;
-    if(!ethAmount || ethAmount <= 0) return alert("Digite um valor válido");
-    try {
-        const tx = await launchpad.buyTokens({ value: ethers.utils.parseEther(ethAmount.toString()) });
+    if(!ethAmount||ethAmount<=0) return alert("Digite um valor válido");
+    try{
+        const tx = await launchpad.buyTokens({value:ethers.utils.parseEther(ethAmount.toString())});
         alert("Transação enviada. Confirme na MetaMask...");
         await tx.wait();
         alert("Compra confirmada!");
         updateUI();
-    } catch(err){ console.error(err); alert("Erro ao comprar token! Veja console."); }
+    }catch(err){ console.error(err); alert("Erro ao comprar token! Veja console."); }
 });
 
-// Claim
-document.getElementById("claimBtn").addEventListener("click", async ()=>{
-    if(!signer) return alert("Conecte MetaMask primeiro!");
-    try {
+// ---------- CLAIM TOKENS -----------
+document.getElementById("claimBtn").addEventListener("click",async()=>{
+    if(!signer) return alert("Conecte a MetaMask primeiro!");
+    try{
         const tx = await launchpad.claim();
         alert("Claim enviado. Aguarde confirmação...");
         await tx.wait();
         alert("Tokens recebidos!");
-    } catch(err){ console.error(err); alert("Erro no claim! Veja console."); }
+    }catch(err){ console.error(err); alert("Erro no claim! Veja console."); }
 });
 
-// Botão conectar
+// ---------- BOTÃO CONECTAR ----------
 document.getElementById("connectBtn").addEventListener("click", connectWallet);
 </script>
+
 </body>
 </html>
