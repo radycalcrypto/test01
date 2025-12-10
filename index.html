@@ -5,112 +5,115 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Pill Launchpad</title>
 
-<!-- Fonte cyberpunk -->
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
 
 <style>
 body {
-    margin: 0;
-    padding: 0;
-    background: #0a0a0a;
-    font-family: 'Orbitron', sans-serif;
-    color: #00ff9f;
-    overflow-x: hidden;
+    margin:0;
+    padding:0;
+    background:#0a0a0a;
+    font-family:'Orbitron', sans-serif;
+    color:#00ff9f;
+    overflow-x:hidden;
 }
 
 canvas#matrixBG {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: -1;
+    position:fixed;
+    top:0; left:0;
+    width:100vw; height:100vh;
+    z-index:-1;
 }
 
 .container {
-    text-align: center;
-    padding: 40px 20px;
+    text-align:center;
+    padding:40px 20px;
 }
 
 .logo {
-    width: 240px;
-    height: auto;
-    margin-bottom: 20px;
-    border-radius: 12px;
-    box-shadow: 0 0 30px #00ff9f;
+    width:220px;
+    height:auto;
+    margin-bottom:20px;
+    border-radius:12px;
+    box-shadow:0 0 40px #00ff9f;
 }
 
 h1 {
-    font-size: 48px;
-    color: #00ffaa;
-    text-shadow: 0 0 20px #00ff99;
+    font-size:50px;
+    color:#00ffaa;
+    text-shadow:0 0 25px #00ff99;
 }
 
 .card {
-    background: rgba(0,0,0,0.65);
-    border: 1px solid #00ff88;
-    max-width: 520px;
-    margin: 20px auto;
-    padding: 30px;
-    border-radius: 12px;
-    box-shadow: 0 0 25px #00ff66;
+    background: rgba(0,0,0,0.7);
+    border:1px solid #00ff88;
+    max-width:550px;
+    margin:20px auto;
+    padding:30px;
+    border-radius:12px;
+    box-shadow:0 0 30px #00ff66;
 }
 
 .info, .market-info {
-    margin: 6px 0;
-    font-size: 18px;
-    color: #00ffcc;
-}
-
-button {
-    background: #00ff99;
-    border: none;
-    padding: 15px 32px;
-    border-radius: 10px;
-    color: black;
-    font-size: 18px;
-    cursor: pointer;
-    transition: 0.3s;
-    font-weight: bold;
-    margin: 5px;
-}
-button:hover {
-    background: #ff0055;
-    color: white;
-    box-shadow: 0 0 25px #ff0055;
+    margin:6px 0;
+    font-size:18px;
+    color:#00ffcc;
 }
 
 .countdown {
-    font-size: 24px;
-    margin-bottom: 20px;
-    font-weight: bold;
-    color: #ff4444;
-    text-shadow: 0 0 10px #ff4444;
+    font-size:26px;
+    font-weight:bold;
+    color:#ff4444;
+    text-shadow:0 0 15px #ff4444;
+    margin-bottom:20px;
 }
 
 .progress-container {
     background: rgba(0,0,0,0.2);
-    border-radius: 12px;
-    margin: 20px auto;
-    width: 90%;
-    height: 25px;
-    border: 1px solid #00ff88;
+    border-radius:12px;
+    margin:15px auto;
+    width:90%;
+    height:30px;
+    border:1px solid #00ff88;
 }
 
 .progress-bar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, #00ff9f, #00ffaa);
-    border-radius: 12px;
-    transition: width 0.5s ease;
-    box-shadow: 0 0 15px #00ff9f;
+    height:100%;
+    width:0%;
+    background: linear-gradient(90deg,#00ff9f,#00ffaa);
+    border-radius:12px;
+    transition:width 0.5s ease;
+    box-shadow:0 0 20px #00ff9f;
 }
 
 input[type="number"] {
     padding:10px;
     font-size:16px;
-    width:80%;
+    width:70%;
     border-radius:8px;
-    margin: 10px 0;
+    margin:10px 0;
+}
+
+button {
+    background:#00ff99;
+    border:none;
+    padding:14px 28px;
+    border-radius:10px;
+    color:black;
+    font-size:18px;
+    cursor:pointer;
+    font-weight:bold;
+    margin:5px;
+    transition:0.3s;
+}
+button:hover {
+    background:#ff0055;
+    color:white;
+    box-shadow:0 0 25px #ff0055;
+}
+
+input::placeholder {
+    color:#00ff99;
+    opacity:0.7;
 }
 </style>
 </head>
@@ -137,107 +140,116 @@ input[type="number"] {
             <div class="progress-bar" id="progressBar"></div>
         </div>
 
-        <button onclick="connect()">Conectar MetaMask</button>
-        <br/><br/>
+        <button onclick="connect()">Conectar MetaMask</button><br/><br/>
 
         <input id="ethAmount" type="number" placeholder="ETH para comprar">
-        <br><br>
-        <button onclick="buyToken()">Comprar Token</button>
-        <button onclick="claimToken()">Claim</button>
-    </div>
+        <input id="tokenAmount" type="number" placeholder="Ou quantidade de tokens"><br/><br/>
 
+        <button onclick="buyToken()">Comprar</button>
+        <button onclick="claimToken()">Claim</button>
+        <div class="market-info" id="maxBuyAlert" style="color:#ff0055;font-weight:bold;"></div>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
-
 <script>
-/* MATRIX BACKGROUND EFFECT */
-const canvas = document.getElementById("matrixBG");
-const ctx = canvas.getContext("2d");
-canvas.height = window.innerHeight;
-canvas.width = window.innerWidth;
+/* MATRIX BACKGROUND */
+const canvas=document.getElementById("matrixBG");
+const ctx=canvas.getContext("2d");
+canvas.height=window.innerHeight;
+canvas.width=window.innerWidth;
 
-const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-const fontSize = 14;
-const columns = canvas.width / fontSize;
-const drops = Array.from({length: columns}, () => 1);
+const letters="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const fontSize=14;
+const columns=canvas.width/fontSize;
+const drops=Array.from({length:columns},()=>1);
 
-function draw() {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#00ff99";
-    ctx.font = fontSize + "px arial";
-
-    for (let i = 0; i < drops.length; i++) {
-        const text = letters.charAt(Math.floor(Math.random() * letters.length));
-        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+function draw(){
+    ctx.fillStyle="rgba(0,0,0,0.05)";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle="#00ff99";
+    ctx.font=fontSize+"px arial";
+    for(let i=0;i<drops.length;i++){
+        const text=letters.charAt(Math.floor(Math.random()*letters.length));
+        ctx.fillText(text,i*fontSize,drops[i]*fontSize);
+        if(drops[i]*fontSize>canvas.height && Math.random()>0.975) drops[i]=0;
         drops[i]++;
     }
 }
-setInterval(draw, 33);
+setInterval(draw,33);
 
-/* COUNTDOWN TIMER */
-const startTime = new Date().getTime();
-const endTime = startTime + 4*60*60*1000; // 4 hours
-setInterval(() => {
-    const now = new Date().getTime();
-    const countdown = document.getElementById("countdown");
-    if (now < startTime) countdown.innerHTML = "Presale começa em: " + formatTime(startTime - now);
-    else if (now < endTime) countdown.innerHTML = "Presale termina em: " + formatTime(endTime - now);
-    else countdown.innerHTML = "Presale encerrada";
-}, 1000);
+/* COUNTDOWN */
+const startTime=new Date().getTime();
+const endTime=startTime+4*60*60*1000;
+setInterval(()=>{
+    const now=new Date().getTime();
+    const countdown=document.getElementById("countdown");
+    if(now<startTime) countdown.innerText="Presale começa em: "+formatTime(startTime-now);
+    else if(now<endTime) countdown.innerText="Presale termina em: "+formatTime(endTime-now);
+    else countdown.innerText="Presale encerrada";
+},1000);
 
 function formatTime(ms){
-    const h = Math.floor(ms / (1000*60*60));
-    const m = Math.floor((ms % (1000*60*60))/(1000*60));
-    const s = Math.floor((ms % (1000*60))/1000);
+    const h=Math.floor(ms/(1000*60*60));
+    const m=Math.floor((ms%(1000*60*60))/(1000*60));
+    const s=Math.floor((ms%(1000*60))/1000);
     return `${h}h ${m}m ${s}s`;
 }
 
-/* METAMASK + LAUNCHPAD */
+/* LAUNCHPAD INTERACTION */
 let account;
-const launchpadAddress = "0x72A9a07EC3Fdd4A58332C5ED37F6d35a72d541c9";
-const tokenAddress = "0x42B966dA68F65bF29ba4F8d518CBA20153477336";
+const launchpadAddress="0x72A9a07EC3Fdd4A58332C5ED37F6d35a72d541c9";
+const tokenAddress="0x42B966dA68F65bF29ba4F8d518CBA20153477336";
 
-let provider, signer, launchpadContract, tokenContract;
-const abiLaunchpad = [ 
+let provider,signer,launchpadContract,tokenContract;
+const abiLaunchpad=[
     "function buy() payable",
     "function claim()",
     "function totalRaised() view returns(uint256)",
     "function userTokens(address) view returns(uint256)",
     "function progress() view returns(uint256)"
 ];
-const abiToken = [
+const abiToken=[
     "function balanceOf(address) view returns(uint256)",
     "function decimals() view returns(uint8)"
 ];
 
 async function connect(){
     if(!window.ethereum) return alert("Instale MetaMask!");
-    provider = new ethers.providers.Web3Provider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
-    signer = provider.getSigner();
-    account = await signer.getAddress();
-    launchpadContract = new ethers.Contract(launchpadAddress, abiLaunchpad, signer);
-    tokenContract = new ethers.Contract(tokenAddress, abiToken, provider);
-    alert("Conectado: " + account);
+    provider=new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts",[]);
+    signer=provider.getSigner();
+    account=await signer.getAddress();
+    launchpadContract=new ethers.Contract(launchpadAddress,abiLaunchpad,signer);
+    tokenContract=new ethers.Contract(tokenAddress,abiToken,provider);
+    alert("Conectado: "+account);
     updateProgress();
 }
 
 async function buyToken(){
-    if(!account) return alert("Conecte sua carteira primeiro!");
-    const amount = document.getElementById("ethAmount").value;
-    if(amount <= 0) return alert("Valor inválido");
-    const tx = await launchpadContract.buy({value: ethers.utils.parseEther(amount)});
+    if(!account) return alert("Conecte sua carteira!");
+    const ethAmount=document.getElementById("ethAmount").value;
+    const tokenAmount=document.getElementById("tokenAmount").value;
+    let valueETH;
+    if(tokenAmount>0){
+        // calcula ETH necessário com preço dinâmico (simples)
+        const progressPercent=parseFloat(document.getElementById("progressBar").style.width)||0;
+        const currentPrice=0.001*(1+progressPercent/100);
+        valueETH=tokenAmount*currentPrice;
+    }else{
+        valueETH=parseFloat(ethAmount);
+    }
+    if(valueETH>0.1) document.getElementById("maxBuyAlert").innerText="A compra máxima é 100 USD (~0.1 ETH)";
+    else document.getElementById("maxBuyAlert").innerText="";
+    const tx=await launchpadContract.buy({value:ethers.utils.parseEther(valueETH.toString())});
     await tx.wait();
     alert("Compra realizada!");
     updateProgress();
 }
 
 async function claimToken(){
-    if(!account) return alert("Conecte sua carteira primeiro!");
-    const tx = await launchpadContract.claim();
+    if(!account) return alert("Conecte sua carteira!");
+    const tx=await launchpadContract.claim();
     await tx.wait();
     alert("Tokens resgatados!");
     updateProgress();
@@ -245,12 +257,13 @@ async function claimToken(){
 
 async function updateProgress(){
     if(!launchpadContract) return;
-    const sold = await launchpadContract.userTokens(account);
-    const progress = await launchpadContract.progress();
-    document.getElementById("soldAmount").innerText = `Tokens vendidos: ${sold} PILL`;
-    document.getElementById("progressBar").style.width = `${progress}%`;
-    const totalRaised = await launchpadContract.totalRaised();
-    document.getElementById("marketCap").innerText = `Market Cap estimado: ${ethers.utils.formatEther(totalRaised*1000)} ETH`;
+    const sold=await launchpadContract.userTokens(account);
+    const progress=await launchpadContract.progress();
+    document.getElementById("soldAmount").innerText=`Tokens vendidos: ${sold} PILL`;
+    document.getElementById("progressBar").style.width=`${progress}%`;
+    const totalRaised=await launchpadContract.totalRaised();
+    document.getElementById("marketCap").innerText=`Market Cap estimado: ${ethers.utils.formatEther(totalRaised*1000)} ETH`;
+    document.getElementById("tokenPrice").innerText=`Preço atual: ~${0.001*(progress/100+1)} ETH`;
 }
 </script>
 
