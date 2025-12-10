@@ -140,7 +140,7 @@ input::placeholder {
             <div class="progress-bar" id="progressBar"></div>
         </div>
 
-        <button onclick="connect()">Conectar MetaMask</button><br/><br/>
+        <button id="connectBtn" onclick="connect()">Conectar MetaMask</button><br/><br/>
 
         <input id="ethAmount" type="number" placeholder="ETH para comprar">
         <input id="tokenAmount" type="number" placeholder="Ou quantidade de tokens"><br/><br/>
@@ -158,12 +158,10 @@ const canvas=document.getElementById("matrixBG");
 const ctx=canvas.getContext("2d");
 canvas.height=window.innerHeight;
 canvas.width=window.innerWidth;
-
 const letters="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const fontSize=14;
 const columns=canvas.width/fontSize;
 const drops=Array.from({length:columns},()=>1);
-
 function draw(){
     ctx.fillStyle="rgba(0,0,0,0.05)";
     ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -197,11 +195,10 @@ function formatTime(ms){
 }
 
 /* LAUNCHPAD INTERACTION */
-let account;
-const launchpadAddress="0x72A9a07EC3Fdd4A58332C5ED37F6d35a72d541c9";
+let account, provider, signer, launchpadContract, tokenContract;
+const launchpadAddress="0x2d3a2a09fed647f67EE96e83354e78B9fCB7b90e";
 const tokenAddress="0x42B966dA68F65bF29ba4F8d518CBA20153477336";
 
-let provider,signer,launchpadContract,tokenContract;
 const abiLaunchpad=[
     "function buy() payable",
     "function claim()",
@@ -209,50 +206,71 @@ const abiLaunchpad=[
     "function userTokens(address) view returns(uint256)",
     "function progress() view returns(uint256)"
 ];
+
 const abiToken=[
     "function balanceOf(address) view returns(uint256)",
     "function decimals() view returns(uint8)"
 ];
 
 async function connect(){
-    if(!window.ethereum) return alert("Instale MetaMask!");
-    provider=new ethers.providers.Web3Provider(window.ethereum);
-    await provider.send("eth_requestAccounts",[]);
-    signer=provider.getSigner();
-    account=await signer.getAddress();
-    launchpadContract=new ethers.Contract(launchpadAddress,abiLaunchpad,signer);
-    tokenContract=new ethers.Contract(tokenAddress,abiToken,provider);
-    alert("Conectado: "+account);
-    updateProgress();
+    if(!window.ethereum){ alert("Instale MetaMask!"); return; }
+    try{
+        provider=new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts",[]);
+        signer=provider.getSigner();
+        account=await signer.getAddress();
+        launchpadContract=new ethers.Contract(launchpadAddress,abiLaunchpad,signer);
+        tokenContract=new ethers.Contract(tokenAddress,abiToken,provider);
+        document.getElementById("connectBtn").innerText="Conectado";
+        document.getElementById("connectBtn").style.background="#00ffaa";
+        document.getElementById("connectBtn").style.color="#000";
+        alert("Conectado: "+account);
+        updateProgress();
+    }catch(err){
+        console.error(err);
+        alert("Falha ao conectar MetaMask!");
+    }
 }
 
 async function buyToken(){
     if(!account) return alert("Conecte sua carteira!");
-    const ethAmount=document.getElementById("ethAmount").value;
-    const tokenAmount=document.getElementById("tokenAmount").value;
-    let valueETH;
-    if(tokenAmount>0){
-        // calcula ETH necessário com preço dinâmico (simples)
-        const progressPercent=parseFloat(document.getElementById("progressBar").style.width)||0;
-        const currentPrice=0.001*(1+progressPercent/100);
-        valueETH=tokenAmount*currentPrice;
-    }else{
-        valueETH=parseFloat(ethAmount);
+    const ethAmount=parseFloat(document.getElementById("ethAmount").value)||0;
+    const tokenAmount=parseFloat(document.getElementById("tokenAmount").value)||0;
+
+    let valueETH = 0;
+    const progressPercent=parseFloat(document.getElementById("progressBar").style.width)||0;
+    const currentPrice=0.001*(1+progressPercent/100); // preço dinâmico simples
+
+    if(tokenAmount>0) valueETH=tokenAmount*currentPrice;
+    else valueETH=ethAmount;
+
+    if(valueETH>0.1){ 
+        document.getElementById("maxBuyAlert").innerText="A compra máxima é 100 USD (~0.1 ETH)";
+        valueETH=0.1;
+    }else document.getElementById("maxBuyAlert").innerText="";
+
+    try{
+        const tx=await launchpadContract.buy({value:ethers.utils.parseEther(valueETH.toString())});
+        await tx.wait();
+        alert("Compra realizada!");
+        updateProgress();
+    }catch(err){
+        console.error(err);
+        alert("Falha na compra!");
     }
-    if(valueETH>0.1) document.getElementById("maxBuyAlert").innerText="A compra máxima é 100 USD (~0.1 ETH)";
-    else document.getElementById("maxBuyAlert").innerText="";
-    const tx=await launchpadContract.buy({value:ethers.utils.parseEther(valueETH.toString())});
-    await tx.wait();
-    alert("Compra realizada!");
-    updateProgress();
 }
 
 async function claimToken(){
     if(!account) return alert("Conecte sua carteira!");
-    const tx=await launchpadContract.claim();
-    await tx.wait();
-    alert("Tokens resgatados!");
-    updateProgress();
+    try{
+        const tx=await launchpadContract.claim();
+        await tx.wait();
+        alert("Tokens resgatados!");
+        updateProgress();
+    }catch(err){
+        console.error(err);
+        alert("Falha ao resgatar tokens!");
+    }
 }
 
 async function updateProgress(){
@@ -263,7 +281,7 @@ async function updateProgress(){
     document.getElementById("progressBar").style.width=`${progress}%`;
     const totalRaised=await launchpadContract.totalRaised();
     document.getElementById("marketCap").innerText=`Market Cap estimado: ${ethers.utils.formatEther(totalRaised*1000)} ETH`;
-    document.getElementById("tokenPrice").innerText=`Preço atual: ~${0.001*(progress/100+1)} ETH`;
+    document.getElementById("tokenPrice").innerText=`Preço atual: ~${(0.001*(progress/100+1)).toFixed(5)} ETH`;
 }
 </script>
 
