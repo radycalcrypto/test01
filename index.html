@@ -1,271 +1,166 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PILL Presale</title>
-
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js"></script>
-
-<style>
-body {
-    margin:0; padding:0;
-    background:black;
-    color:#00ffbf;
-    font-family:Arial, sans-serif;
-    text-align:center;
-}
-.container {
-    max-width:500px;
-    margin:50px auto;
-    padding:30px;
-    border-radius:12px;
-    background: rgba(0,0,0,0.7);
-    border:1px solid #00ffbf;
-}
-h1 {
-    color:#00ffc3;
-}
-button {
-    width:90%;
-    padding:14px;
-    margin-top:12px;
-    border:0;
-    border-radius:10px;
-    font-size:17px;
-    font-weight:bold;
-    cursor:pointer;
-    background:#00ffbf;
-    color:black;
-    transition:0.3s;
-}
-button:hover:not(:disabled) {
-    background:#ff0066;
-    color:white;
-}
-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-input {
-    width:90%;
-    padding:12px;
-    margin-top:14px;
-    border-radius:8px;
-    font-size:16px;
-    border: 1px solid #00ffbf;
-    background: #000;
-    color: #00ffbf;
-}
-.progressBox {
-    width:100%;
-    height:22px;
-    background:#222;
-    border-radius:12px;
-    margin-top:12px;
-    overflow:hidden;
-    border:1px solid #00ffbf;
-}
-.progressFill {
-    height:100%;
-    width:0%;
-    background:#00ffaa;
-    transition:0.4s;
-}
-#statusMessage {
-    margin-top: 15px;
-    font-weight: bold;
-    min-height: 20px;
-}
-</style>
-</head>
-<body>
-
-<div class="container">
-    <h1>PILL Presale</h1>
-    <button id="connectBtn">Conectar MetaMask</button>
-    <div id="statusMessage"></div>
-
-    <div id="infoCard" style="margin-top:20px;">
-        <div id="priceDisplay">Preço do token: Aguardando conexão...</div>
-        <div id="tokensSold">Tokens vendidos: --</div>
-        <div class="progressBox">
-            <div class="progressFill" id="progressFill"></div>
-        </div>
-        <input type="number" id="ethAmount" placeholder="Quantidade de ETH" min="0" step="0.001">
-        <button id="buyBtn" disabled>Comprar</button>
-    </div>
-</div>
-
 <script>
-// Usando a versão 6 do Ethers.js
-const { BrowserProvider, Contract, parseEther, formatEther, formatUnits } = ethers;
+// A função de inicialização que será chamada APÓS o carregamento completo do Ethers.js
+function initDApp() {
+    // 1. DESESTRUTURAÇÃO DO ETHERS:
+    // Agora 'ethers' está garantido de estar disponível
+    const { BrowserProvider, Contract, parseEther, formatEther, formatUnits } = ethers;
 
-let provider, signer, account, presaleContract;
-const presaleAddress = "0x6754c0f28ab363Ed6090843baeAb201C3CaCD96D"; // Seu contrato PillPresaleETH
+    let provider, signer, account, presaleContract;
+    const presaleAddress = "0x6754c0f28ab363Ed6090843baeAb201C3CaCD96D"; // Seu contrato PillPresaleETH
 
-// ABI simplificada do contrato, usando o formato Ethers v6
-const abiPresale = [
-    "function buyTokens() payable",
-    "function tokensSold() view returns(uint256)",
-    "function tokenPrice() view returns(uint256)",
-    "function maxCapETH() view returns(uint256)"
-];
+    // ABI simplificada do contrato, usando o formato Ethers v6
+    const abiPresale = [
+        "function buyTokens() payable",
+        "function tokensSold() view returns(uint256)",
+        "function tokenPrice() view returns(uint256)",
+        "function maxCapETH() view returns(uint256)",
+        "function totalRaisedETH() view returns(uint256)" // Adicionada totalRaisedETH
+    ];
 
-const connectBtn = document.getElementById("connectBtn");
-const buyBtn = document.getElementById("buyBtn");
-const ethAmountInput = document.getElementById("ethAmount");
-const statusMessage = document.getElementById("statusMessage");
+    const connectBtn = document.getElementById("connectBtn");
+    const buyBtn = document.getElementById("buyBtn");
+    const ethAmountInput = document.getElementById("ethAmount");
+    const statusMessage = document.getElementById("statusMessage");
 
-// Função para exibir mensagens de status
-function setStatus(message, isError = false) {
-    statusMessage.innerText = message;
-    statusMessage.style.color = isError ? '#ff0066' : '#00ffaa';
-}
-
-// 1. Conectar MetaMask (Função principal de conexão)
-async function connectWallet() {
-    if (!window.ethereum) {
-        setStatus("MetaMask não encontrada! Instale a extensão para continuar.", true);
-        return;
+    // Função para exibir mensagens de status
+    function setStatus(message, isError = false) {
+        statusMessage.innerText = message;
+        statusMessage.style.color = isError ? '#ff0066' : '#00ffaa';
     }
 
-    try {
-        // Cria um provedor que se conecta ao MetaMask
-        provider = new BrowserProvider(window.ethereum);
+    // 1. Conectar MetaMask (Função principal de conexão)
+    async function connectWallet() {
+        if (!window.ethereum) {
+            setStatus("MetaMask não encontrada! Instale a extensão para continuar.", true);
+            return;
+        }
 
-        // Solicita ao usuário para conectar a conta
-        const accounts = await provider.send("eth_requestAccounts", []);
-        account = accounts[0];
-        signer = await provider.getSigner();
-        
-        // Inicializa o contrato com o Signer
-        presaleContract = new Contract(presaleAddress, abiPresale, signer);
+        try {
+            // Cria um provedor que se conecta ao MetaMask
+            provider = new BrowserProvider(window.ethereum);
 
-        // Atualiza a UI para estado conectado
-        connectBtn.innerText = `Conectado: ${account.substring(0,6)}...${account.slice(-4)}`;
-        connectBtn.style.background = "#00ffaa";
-        connectBtn.disabled = true;
-        buyBtn.disabled = false;
-        setStatus("Conexão bem-sucedida!", false);
+            // Solicita ao usuário para conectar a conta
+            const accounts = await provider.send("eth_requestAccounts", []);
+            account = accounts[0];
+            signer = await provider.getSigner();
+            
+            // Inicializa o contrato com o Signer
+            presaleContract = new Contract(presaleAddress, abiPresale, signer);
 
-        // Inicializa a UI
-        updateUI();
+            // Atualiza a UI para estado conectado
+            connectBtn.innerText = `Conectado: ${account.substring(0,6)}...${account.slice(-4)}`;
+            connectBtn.style.background = "#00ffaa";
+            connectBtn.disabled = true;
+            buyBtn.disabled = false;
+            setStatus("Conexão bem-sucedida!", false);
 
-        // Escuta por mudanças de conta/rede (melhora a experiência do usuário)
-        window.ethereum.on('accountsChanged', handleAccountsChanged);
-        window.ethereum.on('chainChanged', handleChainChanged);
+            // Inicializa a UI
+            updateUI();
 
-    } catch(err) {
-        console.error("Erro ao conectar MetaMask:", err);
-        setStatus("Erro ao conectar! Recuse ou veja console para detalhes.", true);
+            // Escuta por mudanças de conta/rede (melhora a experiência do usuário)
+            window.ethereum.on('accountsChanged', handleAccountsChanged);
+            window.ethereum.on('chainChanged', handleChainChanged);
+
+        } catch(err) {
+            console.error("Erro ao conectar MetaMask:", err);
+            setStatus("Erro ao conectar! Recuse ou veja console para detalhes.", true);
+        }
     }
-}
 
-// Handler para mudança de contas
-function handleAccountsChanged(accounts) {
-    if (accounts.length === 0) {
-        // Usuário desconectou todas as contas
-        location.reload(); // Simplesmente recarrega a página para reiniciar
-    } else if (accounts[0] !== account) {
-        // Conta mudou
+    // Handler para mudança de contas
+    function handleAccountsChanged(accounts) {
+        if (accounts.length === 0) {
+            location.reload(); 
+        } else if (accounts[0] !== account) {
+            location.reload();
+        }
+    }
+
+    // Handler para mudança de rede
+    function handleChainChanged(chainId) {
         location.reload();
     }
-}
-
-// Handler para mudança de rede
-function handleChainChanged(chainId) {
-    // A rede mudou, recarrega para re-inicializar o provedor/contrato na nova rede
-    location.reload();
-}
 
 
-// 2. Atualizar UI (Lê dados do contrato)
-async function updateUI() {
-    if (!presaleContract) return;
+    // 2. Atualizar UI (Lê dados do contrato)
+    async function updateUI() {
+        if (!presaleContract) return;
 
-    try {
-        // Chama as funções view do contrato
-        const sold = await presaleContract.tokensSold();
-        const price = await presaleContract.tokenPrice();
-        const maxCap = await presaleContract.maxCapETH();
+        try {
+            const sold = await presaleContract.tokensSold();
+            const price = await presaleContract.tokenPrice();
+            const maxCap = await presaleContract.maxCapETH();
+            const totalRaisedETH = await presaleContract.totalRaisedETH();
 
-        // O Ethers v6 usa formatUnits, mas você deve especificar a unidade (e.g., 18 para ETH/Token)
-        const soldTokensFormatted = formatUnits(sold, 18); // Assumindo 18 decimais para o token
-        const priceETH = formatEther(price);
-        const maxCapETHFormatted = formatEther(maxCap);
 
-        document.getElementById("tokensSold").innerText = "Tokens vendidos: " + soldTokensFormatted;
-        document.getElementById("priceDisplay").innerText = "Preço do token: " + priceETH + " ETH";
+            const soldTokensFormatted = formatUnits(sold, 18); 
+            const priceETH = formatEther(price);
+            const maxCapETHFormatted = formatEther(maxCap);
+            const soldETHFormatted = parseFloat(formatEther(totalRaisedETH));
+            const maxCapETHFloat = parseFloat(maxCapETHFormatted);
 
-        // Calcula e atualiza a barra de progresso
-        const soldETH = await presaleContract.totalRaisedETH(); // Adicionei 'totalRaisedETH' à ABI
-        const soldETHFormatted = parseFloat(formatEther(soldETH));
-        const maxCapETHFloat = parseFloat(maxCapETHFormatted);
+            document.getElementById("tokensSold").innerText = "Tokens vendidos: " + soldTokensFormatted;
+            document.getElementById("priceDisplay").innerText = "Preço do token: " + priceETH + " ETH";
 
-        const pct = (soldETHFormatted / maxCapETHFloat) * 100;
-        document.getElementById("progressFill").style.width = Math.min(pct, 100) + "%";
+            // Calcula e atualiza a barra de progresso
+            const pct = (soldETHFormatted / maxCapETHFloat) * 100;
+            document.getElementById("progressFill").style.width = Math.min(pct, 100) + "%";
 
-    } catch(err){
-        console.error("Erro ao atualizar UI/ler contrato:", err);
-        setStatus("Erro ao ler dados do contrato! Verifique a rede ou a ABI.", true);
-    }
-}
-
-// 3. Comprar tokens (Envia transação)
-async function buyTokens() {
-    if (!signer) return setStatus("Conecte a MetaMask primeiro.", true);
-    
-    const ethAmount = ethAmountInput.value;
-    if (!ethAmount || parseFloat(ethAmount) <= 0) return setStatus("Insira um valor válido de ETH.", true);
-
-    try {
-        setStatus("Aguardando confirmação na MetaMask...", false);
-        
-        // O Ethers v6 usa parseEther para converter string para BigInt
-        const valueToSend = parseEther(ethAmount);
-
-        // Chama a função buyTokens do contrato, enviando ETH no campo 'value'
-        const tx = await presaleContract.buyTokens({ value: valueToSend });
-        
-        setStatus(`Transação enviada: ${tx.hash.substring(0, 10)}... Aguardando mineração.`, false);
-        
-        // Aguarda a transação ser confirmada (minerada)
-        await tx.wait();
-        
-        setStatus("Compra de tokens confirmada com sucesso!", false);
-        updateUI(); // Atualiza os dados após a compra
-
-    } catch(err) {
-        console.error("Erro na compra:", err);
-
-        let errorMsg = "Erro ao comprar tokens. Verifique o console.";
-        // Tenta extrair uma mensagem de erro mais legível, se disponível
-        if (err.reason) {
-            errorMsg = `Transação Revertida: ${err.reason}`;
-        } else if (err.code === 4001) {
-            errorMsg = "Transação rejeitada pelo usuário na MetaMask.";
+        } catch(err){
+            console.error("Erro ao atualizar UI/ler contrato:", err);
+            setStatus("Erro ao ler dados do contrato! Verifique a rede ou a ABI.", true);
         }
-        setStatus(errorMsg, true);
     }
+
+    // 3. Comprar tokens (Envia transação)
+    async function buyTokens() {
+        if (!signer) return setStatus("Conecte a MetaMask primeiro.", true);
+        
+        const ethAmount = ethAmountInput.value;
+        if (!ethAmount || parseFloat(ethAmount) <= 0) return setStatus("Insira um valor válido de ETH.", true);
+
+        try {
+            setStatus("Aguardando confirmação na MetaMask...", false);
+            
+            const valueToSend = parseEther(ethAmount);
+
+            const tx = await presaleContract.buyTokens({ value: valueToSend });
+            
+            setStatus(`Transação enviada: ${tx.hash.substring(0, 10)}... Aguardando mineração.`, false);
+            
+            await tx.wait();
+            
+            setStatus("Compra de tokens confirmada com sucesso!", false);
+            updateUI(); 
+
+        } catch(err) {
+            console.error("Erro na compra:", err);
+
+            let errorMsg = "Erro ao comprar tokens. Verifique o console.";
+            if (err.reason) {
+                errorMsg = `Transação Revertida: ${err.reason}`;
+            } else if (err.code === 4001) {
+                errorMsg = "Transação rejeitada pelo usuário na MetaMask.";
+            }
+            setStatus(errorMsg, true);
+        }
+    }
+
+    // Adiciona os event listeners DENTRO da função de inicialização
+    connectBtn.addEventListener("click", connectWallet);
+    buyBtn.addEventListener("click", buyTokens);
+
+    // Atualiza UI a cada 10 segundos
+    setInterval(() => {
+        if (presaleContract) {
+            updateUI();
+        }
+    }, 10000);
 }
 
-// Adiciona os event listeners após o carregamento do script
-connectBtn.addEventListener("click", connectWallet);
-buyBtn.addEventListener("click", buyTokens);
 
-// Atualiza UI a cada 10 segundos, mas apenas se a conexão for bem-sucedida
-// Não precisamos chamar updateUI se o contrato não estiver pronto.
-setInterval(() => {
-    if (presaleContract) {
-        updateUI();
-    }
-}, 10000);
+// NOVO: Chama initDApp quando a janela estiver totalmente carregada
+// Isso garante que o Ethers.js (carregado via CDN) esteja pronto.
+window.addEventListener('load', initDApp);
 
-// Chamada inicial de UI para preencher dados estáticos
-// Se você quiser que os dados apareçam mesmo sem conexão, você precisaria de um provider público (e.g., Alchemy, Infura)
-// Mas, como o foco é a conexão, deixamos para chamar após o connectWallet.
 </script>
-
-</body>
-</html>
