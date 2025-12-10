@@ -29,7 +29,7 @@ body, html {
     z-index: -1;
     overflow: hidden;
     background: #0a0a0a;
-    opacity: 0.2; /* Para não competir com o conteúdo */
+    opacity: 0.2; 
 }
 .matrix-bg::before {
     content: '';
@@ -37,7 +37,7 @@ body, html {
     top: 0;
     left: 0;
     width: 100%;
-    height: 100%;
+    height: 200%; /* Aumentado para garantir o loop */
     background: repeating-linear-gradient(
         to bottom,
         transparent,
@@ -53,7 +53,7 @@ body, html {
         transform: translateY(0);
     }
     to {
-        transform: translateY(-100%);
+        transform: translateY(-50%); /* Ajustado para loop suave */
     }
 }
 
@@ -223,4 +223,279 @@ input:focus {
         padding: 12px;
         font-size: 1em;
     }
-    .info
+    .info-item, .progressText {
+        font-size: 0.9em;
+    }
+}
+</style>
+</head>
+<body>
+
+
+<div class="matrix-bg"></div>
+
+<div class="container">
+    <h1>PILL Presale</h1>
+    <button id="connectBtn">Conectar MetaMask</button>
+    <div id="statusMessage">Aguardando conexão com a MetaMask...</div>
+
+    <div id="infoCard">
+        <div class="info-item"><span>Preço do Token:</span> <span id="priceDisplay">-- ETH</span></div>
+        <div class="info-item"><span>Tokens Vendidos:</span> <span id="tokensSold">--</span></div>
+        <div class="info-item"><span>Tokens Restantes:</span> <span id="tokensRemaining">--</span></div>
+        <div class="info-item"><span>Market Cap Atual:</span> <span id="marketCapDisplay">-- USD</span></div>
+        <div class="info-item"><span>Total Arrecadado:</span> <span id="totalRaisedETHDisplay">-- ETH</span></div>
+        
+        <div class="progressLabel">Progresso da Presale: <span id="presaleProgressText">0%</span></div>
+        <div class="progressBox">
+            <div class="progressFill" id="presaleProgressFill"></div>
+            <div class="progressText" id="presaleProgressLabel"></div>
+        </div>
+
+        <div class="progressLabel">Progresso para Market Cap Alvo: <span id="marketCapProgressText">0%</span></div>
+        <div class="progressBox">
+            <div class="progressFill" id="marketCapProgressFill"></div>
+            <div class="progressText" id="marketCapProgressLabel"></div>
+        </div>
+
+        <input type="number" id="ethAmount" placeholder="Quantidade de ETH para comprar" min="0.001" step="0.001">
+        <button id="buyBtn" disabled>Comprar PILL</button>
+    </div>
+</div>
+
+<script>
+// A função de inicialização que será chamada APÓS o carregamento completo do Ethers.js
+function initDApp() {
+    // Desestruturação do Ethers v6
+    const { BrowserProvider, Contract, parseEther, formatEther, formatUnits } = ethers;
+
+    let provider, signer, account, presaleContract;
+    
+    // ENDEREÇO DO SEU CONTRATO DEPLOYADO NA SEPOLIA
+    const presaleAddress = "0x6b4cd06f01E2840525cBef2962Bce688fa5D6f04"; 
+    
+    // ABI COMPLETA
+    const abiPresale = [
+        "function buyTokens() payable",
+        "function tokensSold() view returns(uint256)",
+        "function tokenPrice() view returns(uint256)",
+        "function progress() view returns(uint256)", 
+        "function presaleActive() view returns(bool)",
+        "function maxCapETH() view returns(uint256)",
+        "function totalRaisedETH() view returns(uint256)" 
+    ];
+
+    // Mapeamento de IDs (torna o código mais limpo e fácil de debugar)
+    const elements = {
+        connectBtn: document.getElementById("connectBtn"),
+        buyBtn: document.getElementById("buyBtn"),
+        ethAmountInput: document.getElementById("ethAmount"),
+        statusMessage: document.getElementById("statusMessage"),
+        priceDisplay: document.getElementById("priceDisplay"),
+        tokensSoldDisplay: document.getElementById("tokensSold"),
+        tokensRemainingDisplay: document.getElementById("tokensRemaining"),
+        marketCapDisplay: document.getElementById("marketCapDisplay"),
+        totalRaisedETHDisplay: document.getElementById("totalRaisedETHDisplay"),
+        presaleProgressFill: document.getElementById("presaleProgressFill"),
+        presaleProgressLabel: document.getElementById("presaleProgressLabel"),
+        presaleProgressText: document.getElementById("presaleProgressText"),
+        marketCapProgressFill: document.getElementById("marketCapProgressFill"),
+        marketCapProgressLabel: document.getElementById("marketCapProgressLabel"),
+        marketCapProgressText: document.getElementById("marketCapProgressText"),
+    };
+
+    // Chain ID da rede Sepolia (11155111)
+    const requiredChainId = BigInt(11155111);
+
+    // --- PARÂMETROS PARA CÁLCULO DE MARKET CAP (FIXOS PARA DEMONSTRAÇÃO) ---
+    const ETH_TO_USD_RATE = 2000; 
+    const MARKET_CAP_GOAL_USD = 100000; 
+    // --------------------------------------------------------------------------
+
+
+    function setStatus(message, isError = false) {
+        if (elements.statusMessage) {
+            elements.statusMessage.innerText = message;
+            elements.statusMessage.style.color = isError ? '#ff0066' : '#00ffaa';
+            elements.statusMessage.style.animation = isError ? 'none' : 'pulse 1.5s infinite';
+        }
+        if (isError) {
+             console.error("STATUS ERROR:", message);
+        }
+    }
+
+    // 1. Conectar MetaMask e verificar Rede
+    async function connectWallet() {
+        if (!window.ethereum) {
+            setStatus("MetaMask não encontrada! Instale a extensão para continuar.", true);
+            return;
+        }
+
+        try {
+            provider = new BrowserProvider(window.ethereum);
+
+            const network = await provider.getNetwork();
+            
+            if (network.chainId !== requiredChainId) {
+                 setStatus("Mude sua MetaMask para a rede Sepolia (ETH Testnet).", true);
+                 await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: '0xaa36a7' }], 
+                });
+                return;
+            }
+
+            const accounts = await provider.send("eth_requestAccounts", []);
+            account = accounts[0];
+            signer = await provider.getSigner();
+            
+            presaleContract = new Contract(presaleAddress, abiPresale, signer);
+
+            // Atualiza a UI para estado conectado
+            elements.connectBtn.innerText = `Conectado: ${account.substring(0,6)}...${account.slice(-4)}`;
+            elements.connectBtn.style.background = "#00ffaa";
+            elements.connectBtn.disabled = true;
+            elements.buyBtn.disabled = false;
+
+            updateUI(); 
+
+            // Escuta por mudanças de conta/rede
+            window.ethereum.on('accountsChanged', handleAccountsChanged);
+            window.ethereum.on('chainChanged', handleChainChanged);
+
+        } catch(err) {
+            console.error("Erro ao conectar MetaMask:", err);
+            let errorMsg = "Erro ao conectar. Veja o console para detalhes.";
+            if (err.code === 4001) {
+                errorMsg = "Conexão rejeitada pelo usuário.";
+            }
+            setStatus(errorMsg, true);
+        }
+    }
+
+    function handleAccountsChanged(accounts) {
+        if (accounts.length > 0) {
+            location.reload(); 
+        }
+    }
+
+    function handleChainChanged(chainId) {
+        location.reload();
+    }
+
+
+    // 2. Atualizar UI (Lê dados do contrato)
+    async function updateUI() {
+        if (!presaleContract) return;
+
+        try {
+            const sold = await presaleContract.tokensSold();
+            const price = await presaleContract.tokenPrice(); 
+            const presaleProgress = await presaleContract.progress(); 
+            const isActive = await presaleContract.presaleActive();
+            const maxCapETH = await presaleContract.maxCapETH(); 
+            const totalRaisedETH = await presaleContract.totalRaisedETH(); 
+
+            // --- Conversão de Dados ---
+            const soldTokensFormatted = parseFloat(formatUnits(sold, 18));
+            const priceETH = parseFloat(formatEther(price));
+            const totalRaisedETHFormatted = parseFloat(formatEther(totalRaisedETH)); 
+            const maxCapETHFormatted = parseFloat(formatEther(maxCapETH));
+            
+            // --- Cálculos ---
+            const marketCapCurrentUSD = (totalRaisedETHFormatted * ETH_TO_USD_RATE);
+            const totalTokensAvailable = (maxCapETHFormatted / priceETH) * (1e18 / 1e18); // Simplificando
+            const tokensRemaining = totalTokensAvailable - soldTokensFormatted;
+            const tokensRemainingFormatted = Math.max(0, tokensRemaining);
+
+            // --- Exibição ---
+            elements.priceDisplay.innerText = `${priceETH.toFixed(8)} ETH`;
+            elements.tokensSoldDisplay.innerText = soldTokensFormatted.toFixed(2);
+            elements.tokensRemainingDisplay.innerText = tokensRemainingFormatted.toFixed(2);
+            elements.marketCapDisplay.innerText = `$${marketCapCurrentUSD.toFixed(2)} USD`;
+            elements.totalRaisedETHDisplay.innerText = `${totalRaisedETHFormatted.toFixed(4)} ETH`;
+
+            // --- Progresso da Presale (ETH vs MaxCap) ---
+            const presalePct = Number(presaleProgress.toString());
+            elements.presaleProgressFill.style.width = Math.min(presalePct, 100) + "%";
+            elements.presaleProgressLabel.innerText = `${presalePct.toFixed(2)}%`;
+            elements.presaleProgressText.innerText = `${presalePct.toFixed(2)}%`;
+
+
+            // --- Progresso do Market Cap Alvo (USD) ---
+            const marketCapProgressPct = (marketCapCurrentUSD / MARKET_CAP_GOAL_USD) * 100;
+            elements.marketCapProgressFill.style.width = Math.min(marketCapProgressPct, 100) + "%";
+            elements.marketCapProgressLabel.innerText = `${marketCapProgressPct.toFixed(2)}%`;
+            elements.marketCapProgressText.innerText = `${marketCapProgressPct.toFixed(2)}%`;
+
+
+            // --- Verificação de Estado ---
+            if (!isActive || presalePct >= 100) {
+                setStatus("Presale Finalizada ou Inativa!", true);
+                elements.buyBtn.disabled = true;
+                elements.buyBtn.innerText = "Finalizado";
+            } else {
+                setStatus(`Conectado à Sepolia. Progresso: ${presalePct.toFixed(2)}%`, false);
+                elements.buyBtn.disabled = false;
+                elements.buyBtn.innerText = "Comprar PILL";
+            }
+
+        } catch(err){
+            console.error("Erro ao atualizar UI/ler contrato:", err);
+            setStatus("Erro ao ler dados do contrato! Verifique o Endereço ou a Rede.", true);
+        }
+    }
+
+    // 3. Comprar tokens (Envia transação)
+    async function buyTokens() {
+        if (!signer) return setStatus("Conecte a MetaMask primeiro.", true);
+        
+        const ethAmount = elements.ethAmountInput.value;
+        if (!ethAmount || parseFloat(ethAmount) <= 0) return setStatus("Insira um valor válido de ETH.", true);
+
+        try {
+            setStatus("Aguardando confirmação na MetaMask...", false);
+            
+            const valueToSend = parseEther(ethAmount);
+
+            const tx = await presaleContract.buyTokens({ value: valueToSend });
+            
+            setStatus(`Transação enviada: ${tx.hash.substring(0, 10)}... Aguardando mineração.`, false);
+            
+            await tx.wait(); 
+            
+            setStatus("Compra de tokens confirmada com sucesso!", false);
+            updateUI(); 
+
+        } catch(err) {
+            console.error("Erro na compra:", err);
+
+            let errorMsg = "Erro ao comprar tokens. Verifique o console.";
+            if (err.reason) {
+                errorMsg = `Transação Revertida: ${err.reason}`;
+            } else if (err.code === 4001) {
+                errorMsg = "Transação rejeitada pelo usuário na MetaMask.";
+            }
+            setStatus(errorMsg, true);
+        }
+    }
+
+    // Inicializa os event listeners
+    if (elements.connectBtn) elements.connectBtn.addEventListener("click", connectWallet);
+    if (elements.buyBtn) elements.buyBtn.addEventListener("click", buyTokens);
+
+    // Atualiza UI a cada 10 segundos
+    setInterval(() => {
+        if (presaleContract) {
+            updateUI();
+        }
+    }, 10000);
+}
+
+// Chama initDApp quando a janela estiver totalmente carregada
+window.addEventListener('load', initDApp);
+
+</script>
+
+</body>
+</html>
