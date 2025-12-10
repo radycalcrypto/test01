@@ -20,10 +20,7 @@
     padding: 2rem;
     text-align: center;
   }
-  h1 {
-    color: #00ffcc;
-    font-size: 3rem;
-  }
+  h1 { color: #00ffcc; font-size: 3rem; }
   .neon-button {
     background: none;
     border: 2px solid #00ffcc;
@@ -34,26 +31,15 @@
     cursor: pointer;
     transition: 0.3s;
   }
-  .neon-button:hover {
-    box-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc;
-  }
+  .neon-button:hover { box-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc; }
   input {
     padding: 0.5rem;
     font-size: 1rem;
     width: 200px;
     margin-right: 1rem;
   }
-  .bar-container {
-    width: 100%;
-    background-color: #111;
-    border: 1px solid #00ff00;
-    margin: 1rem 0;
-  }
-  .bar {
-    width: 0%;
-    height: 20px;
-    background-color: #00ffcc;
-  }
+  .bar-container { width: 100%; background-color: #111; border: 1px solid #00ff00; margin: 1rem 0; }
+  .bar { width: 0%; height: 20px; background-color: #00ffcc; }
 </style>
 </head>
 <body>
@@ -62,12 +48,9 @@
   <h1>PILL Presale</h1>
   <p>Token: <strong>PILL</strong></p>
   <p>Preço inicial: <strong>0.003 ETH</strong></p>
-  <div class="bar-container">
-    <div class="bar" id="marketCapBar"></div>
-  </div>
+  <div class="bar-container"><div class="bar" id="marketCapBar"></div></div>
   <p>Market Cap: <span id="marketCapPercent">0</span>%</p>
   <p>Tokens vendidos: <span id="tokensSold">0</span></p>
-  
   <button class="neon-button" id="connectWalletBtn">Conectar MetaMask</button>
   <br>
   <input type="number" id="ethAmount" placeholder="ETH para comprar" step="0.001" min="0.001">
@@ -78,6 +61,7 @@
 <script>
 const CONTRACT_ADDRESS = "0x6754c0f28ab363Ed6090843baeAb201C3CaCD96D";
 const TOKEN_PRICE = 0.003; // ETH
+
 let provider;
 let signer;
 let contract;
@@ -90,11 +74,18 @@ const abi = [
 
 async function connectWallet() {
   try {
-    await window.ethereum.request({ method: "eth_requestAccounts" });
-    provider = new ethers.providers.Web3Provider(window.ethereum);
+    if (!window.ethereum) {
+      alert("MetaMask não detectada. Instale MetaMask!");
+      return;
+    }
+
+    provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+    await provider.send("eth_requestAccounts", []);
     signer = provider.getSigner();
     contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
+
     document.getElementById("status").innerText = "MetaMask conectada!";
+    updateUI();
   } catch (err) {
     console.error(err);
     document.getElementById("status").innerText = "Erro ao conectar MetaMask!";
@@ -140,7 +131,6 @@ async function buyTokens() {
 document.getElementById("connectWalletBtn").addEventListener("click", connectWallet);
 document.getElementById("buyBtn").addEventListener("click", buyTokens);
 
-// Atualiza UI a cada 5 segundos
 setInterval(updateUI, 5000);
 updateUI();
 </script>
