@@ -1,102 +1,136 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>RadyPresale - Comprar Token</title>
+<meta charset="UTF-8" />
+<title>RadyPresale | Compra Oficial</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<!-- Ethers v6 (CDN OFICIAL) -->
+<!-- Ethers v6 -->
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
 
 <style>
 body {
-    font-family: Arial;
-    background: #0d0d0f;
+    margin: 0;
+    font-family: 'Arial', sans-serif;
     color: white;
-    padding: 20px;
+    overflow: hidden;
 }
+
+/* Vídeo futurista de fundo */
+#bgvideo {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+    z-index: -2;
+}
+
+/* Overlay escuro */
+.overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.65);
+    z-index: -1;
+}
+
 .container {
-    max-width: 420px;
-    margin: auto;
-    background: #151516;
-    border-radius: 10px;
-    padding: 20px;
+    width: 380px;
+    margin: 70px auto;
+    background: rgba(0,0,0,0.65);
+    border: 1px solid #00aaff;
+    border-radius: 14px;
+    padding: 25px;
+    box-shadow: 0 0 30px #0088ff;
+    backdrop-filter: blur(8px);
 }
+
+h2 {
+    text-align: center;
+    color: #00c8ff;
+    text-shadow: 0 0 15px #00c8ff;
+}
+
 input {
     width: 100%;
     padding: 12px;
-    margin: 8px 0;
+    margin-top: 8px;
     border-radius: 8px;
+    border: 1px solid #00aaff;
+    background: rgba(0,0,0,0.4);
+    color: white;
 }
+
 button {
     width: 100%;
-    padding: 12px;
-    margin: 8px 0;
-    border-radius: 8px;
-    background: #6b4cff;
-    color: white;
-    font-size: 15px;
+    padding: 14px;
+    margin-top: 12px;
+    border-radius: 10px;
+    font-size: 16px;
     border: none;
+    background: linear-gradient(90deg, #0077ff, #00d0ff);
+    color: white;
+    box-shadow: 0px 0px 12px #00aaff;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+button:hover {
+    box-shadow: 0px 0px 25px #00d0ff;
+}
+
+#log {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 14px;
+    min-height: 25px;
 }
 </style>
 </head>
 
 <body>
+
+<!-- 🎥 Vídeo futurista de fundo -->
+<video autoplay muted loop id="bgvideo">
+    <source src="https://cdn.coverr.co/videos/coverr-futuristic-lights-tunnel-3576/1080p.mp4" type="video/mp4">
+</video>
+
+<div class="overlay"></div>
+
 <div class="container">
     <h2>🚀 RadyPresale</h2>
-
-    <label>Presale Address:</label>
-    <input id="presaleAddress" placeholder="0x..." />
-
-    <label>Token Address:</label>
-    <input id="tokenAddress" placeholder="0x..." />
-
-    <button onclick="saveConfig()">💾 Salvar Endereços</button>
-    <hr>
 
     <button onclick="connectWallet()">🔗 Conectar MetaMask</button>
     <p id="walletStatus"></p>
 
-    <hr>
-
     <h3>Comprar token com ETH</h3>
+
     <input id="ethAmount" placeholder="Valor em ETH (ex: 0.01)" />
     <button onclick="buyTokens()">🟣 Comprar</button>
 
-    <hr>
-
-    <h3>Claim Tokens</h3>
+    <h3>Claim tokens</h3>
     <button onclick="claimTokens()">⬇️ Claim</button>
 
-    <hr>
     <p id="log"></p>
-
 </div>
 
 <script>
-// ---------------------------
-// Salvar Configurações
-// ---------------------------
-function saveConfig() {
-    localStorage.setItem("presale", document.getElementById("presaleAddress").value);
-    localStorage.setItem("token", document.getElementById("tokenAddress").value);
-    document.getElementById("log").innerText = "Configurações salvas!";
-}
+/* ----------------------------------------------------
+   Endereços ocultos (pré-preenchidos)
+---------------------------------------------------- */
+const PRESALE_ADDRESS = "0xA34825C95aD8EE3552d2865A1368B8124DD30234";
+const TOKEN_ADDRESS   = "0x1955405e6EdB21560889422f86365fd0C6deC998";
 
-// Carregar ao abrir
-document.getElementById("presaleAddress").value = localStorage.getItem("presale") || "";
-document.getElementById("tokenAddress").value = localStorage.getItem("token") || "";
-
-// ---------------------------
-// Conexão MetaMask
-// ---------------------------
+/* ----------------------------------------------------
+   Provider & Signer
+---------------------------------------------------- */
 let provider, signer;
 
 async function connectWallet() {
     try {
         if (!window.ethereum) {
-            alert("MetaMask não encontrada!");
-            return;
+            return alert("MetaMask não instalada!");
         }
 
         await window.ethereum.request({ method: "eth_requestAccounts" });
@@ -105,68 +139,62 @@ async function connectWallet() {
         signer = await provider.getSigner();
 
         document.getElementById("walletStatus").innerText =
-            "Wallet conectada: " + (await signer.getAddress());
+            "🟢 Conectado: " + (await signer.getAddress());
 
-    } catch (e) {
-        document.getElementById("walletStatus").innerText = "Erro conectar: " + e;
+    } catch(e) {
+        document.getElementById("walletStatus").innerText = "Erro: " + e.message;
     }
 }
 
-// ---------------------------
-// ABI Mínima da Presale
-// ---------------------------
+/* ----------------------------------------------------
+   ABI mínima para BUY e CLAIM
+---------------------------------------------------- */
 const presaleABI = [
     "function buyTokens() payable",
     "function claimTokens()",
 ];
 
-// ---------------------------
-// Comprar com ETH
-// ---------------------------
+/* ----------------------------------------------------
+   BUY
+---------------------------------------------------- */
 async function buyTokens() {
     try {
-        const presaleAddr = localStorage.getItem("presale");
-        const amountEth = document.getElementById("ethAmount").value;
+        const amt = document.getElementById("ethAmount").value;
+        if (!amt) return alert("Digite o valor em ETH");
 
-        if (!presaleAddr) return alert("Presale Address não configurado");
-
-        const contract = new ethers.Contract(presaleAddr, presaleABI, signer);
+        const contract = new ethers.Contract(PRESALE_ADDRESS, presaleABI, signer);
 
         const tx = await contract.buyTokens({
-            value: ethers.parseEther(amountEth)
+            value: ethers.parseEther(amt)
         });
 
-        document.getElementById("log").innerText = "⏳ Aguardando confirmar...";
+        document.getElementById("log").innerText = "⏳ Processando compra...";
         await tx.wait();
 
-        document.getElementById("log").innerText = "✅ Compra realizada!";
-
-    } catch (e) {
-        document.getElementById("log").innerText = "Erro: " + e.message;
+        document.getElementById("log").innerText = "✅ Compra confirmada!";
+    } 
+    catch(e) {
+        document.getElementById("log").innerText = "❌ Erro: " + e.message;
     }
 }
 
-// ---------------------------
-// Claim Tokens
-// ---------------------------
+/* ----------------------------------------------------
+   CLAIM
+---------------------------------------------------- */
 async function claimTokens() {
     try {
-        const presaleAddr = localStorage.getItem("presale");
-        if (!presaleAddr) return alert("Presale Address não configurado");
-
-        const contract = new ethers.Contract(presaleAddr, presaleABI, signer);
+        const contract = new ethers.Contract(PRESALE_ADDRESS, presaleABI, signer);
 
         const tx = await contract.claimTokens();
-        document.getElementById("log").innerText = "⏳ Aguardando...";
+        document.getElementById("log").innerText = "⏳ Processando claim...";
 
         await tx.wait();
-        document.getElementById("log").innerText = "✅ Claim realizado com sucesso!";
-
-    } catch (e) {
-        document.getElementById("log").innerText = "Erro: " + e.message;
+        document.getElementById("log").innerText = "✅ Claim realizado!";
+    }
+    catch(e) {
+        document.getElementById("log").innerText = "❌ Erro: " + e.message;
     }
 }
-
 </script>
 
 </body>
