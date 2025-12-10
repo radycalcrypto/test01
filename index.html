@@ -87,7 +87,7 @@ h1 {
 
 /* Estilo para o Cronômetro */
 .timer-display {
-    color: #ff0066; /* Cor de alerta */
+    color: #ff0066; 
     font-size: 1.4em;
     font-weight: bold;
     margin-bottom: 20px;
@@ -287,7 +287,7 @@ function initDApp() {
     // ENDEREÇO DO SEU CONTRATO DEPLOYADO NA SEPOLIA
     const presaleAddress = "0x6b4cd06f01E2840525cBef2962Bce688fa5D6f04"; 
     
-    // ABI COMPLETA
+    // ABI COMPLETA (Assegure-se de que o seu contrato tem essas funções)
     const abiPresale = [
         "function buyTokens() payable",
         "function tokensSold() view returns(uint256)",
@@ -321,9 +321,10 @@ function initDApp() {
     // Chain ID da rede Sepolia (11155111)
     const requiredChainId = BigInt(11155111);
 
-    // --- PARÂMETROS PARA CÁLCULO DE MARKET CAP E DURAÇÃO (FIXOS PARA DEMONSTRAÇÃO) ---
+    // --- PARÂMETROS DE CÁLCULO (CORRIGIDOS) ---
     const ETH_TO_USD_RATE = 2000; 
-    const MARKET_CAP_GOAL_USD = 100000; 
+    const MARKET_CAP_GOAL_USD = 500; // Market Cap Alvo: $500 USD (CORRIGIDO)
+    const USER_EXPECTED_TOKEN_PRICE_ETH = 0.0003; // Preço do Token para UI e cálculo de tokens restantes (CORRIGIDO)
     
     // Configuração do Cronômetro: 4 horas a partir do carregamento da página
     const PRESALE_DURATION_MS = 4 * 60 * 60 * 1000; // 4 horas em milissegundos
@@ -348,7 +349,6 @@ function initDApp() {
 
         if (remainingTime <= 0) {
             elements.presaleTimer.innerText = "Presale Encerrada!";
-            // Se a presale acabar pelo tempo, desabilita o botão de compra
             if(elements.buyBtn) {
                  elements.buyBtn.disabled = true;
                  elements.buyBtn.innerText = "Encerrada por Tempo";
@@ -433,41 +433,52 @@ function initDApp() {
 
         try {
             const sold = await presaleContract.tokensSold();
+            // LER O PREÇO DO CONTRATO
             const price = await presaleContract.tokenPrice(); 
-            const presaleProgress = await presaleContract.progress(); 
             const isActive = await presaleContract.presaleActive();
             const maxCapETH = await presaleContract.maxCapETH(); 
             const totalRaisedETH = await presaleContract.totalRaisedETH(); 
 
             // --- Conversão de Dados ---
             const soldTokensFormatted = parseFloat(formatUnits(sold, 18));
-            const priceETH = parseFloat(formatEther(price));
             const totalRaisedETHFormatted = parseFloat(formatEther(totalRaisedETH)); 
             const maxCapETHFormatted = parseFloat(formatEther(maxCapETH));
             
-            // --- Cálculos ---
+            // --- Cálculos CORRIGIDOS ---
             const marketCapCurrentUSD = (totalRaisedETHFormatted * ETH_TO_USD_RATE);
-            const totalTokensAvailable = (maxCapETHFormatted / priceETH) * priceETH; 
+
+            // CÁLCULO DE TOKENS RESTANTES (Baseado no preço desejado 0.0003 ETH)
+            // Se o Cap Máximo do contrato é 'X' ETH, e cada token custa 0.0003 ETH, 
+            // o total de tokens disponíveis é X / 0.0003.
+            const totalTokensAvailable = maxCapETHFormatted / USER_EXPECTED_TOKEN_PRICE_ETH;
             const tokensRemaining = totalTokensAvailable - soldTokensFormatted;
             const tokensRemainingFormatted = Math.max(0, tokensRemaining);
-            const presalePct = Number(presaleProgress.toString());
+            
+
+            // PROGRESO DA PRESALE (Total Arrecadado vs. Max Cap do contrato)
+            const presalePctRecalculated = (totalRaisedETHFormatted / maxCapETHFormatted) * 100;
+            const finalPresalePct = Math.min(presalePctRecalculated, 100); 
+
+            // PROGRESO DO MARKET CAP ALVO (Current USD vs. Target USD)
+            const marketCapProgressPct = (marketCapCurrentUSD / MARKET_CAP_GOAL_USD) * 100;
 
 
             // --- Exibição ---
-            if (elements.priceDisplay) elements.priceDisplay.innerText = `${priceETH.toFixed(8)} ETH`;
+            // EXIBIÇÃO CORRIGIDA DE PREÇO: 0.0003 ETH
+            if (elements.priceDisplay) elements.priceDisplay.innerText = `${USER_EXPECTED_TOKEN_PRICE_ETH.toFixed(8)} ETH`;
+            
             if (elements.tokensSoldDisplay) elements.tokensSoldDisplay.innerText = soldTokensFormatted.toFixed(2);
             if (elements.tokensRemainingDisplay) elements.tokensRemainingDisplay.innerText = tokensRemainingFormatted.toFixed(2);
             if (elements.marketCapDisplay) elements.marketCapDisplay.innerText = `$${marketCapCurrentUSD.toFixed(2)} USD`;
             if (elements.totalRaisedETHDisplay) elements.totalRaisedETHDisplay.innerText = `${totalRaisedETHFormatted.toFixed(4)} ETH`;
 
-            // --- Progresso da Presale (ETH vs MaxCap) ---
-            if (elements.presaleProgressFill) elements.presaleProgressFill.style.width = Math.min(presalePct, 100) + "%";
-            if (elements.presaleProgressLabel) elements.presaleProgressLabel.innerText = `${presalePct.toFixed(2)}%`;
-            if (elements.presaleProgressText) elements.presaleProgressText.innerText = `${presalePct.toFixed(2)}%`;
+            // --- Progresso da Presale (Barra 1) ---
+            if (elements.presaleProgressFill) elements.presaleProgressFill.style.width = finalPresalePct + "%";
+            if (elements.presaleProgressLabel) elements.presaleProgressLabel.innerText = `${finalPresalePct.toFixed(2)}%`;
+            if (elements.presaleProgressText) elements.presaleProgressText.innerText = `${finalPresalePct.toFixed(2)}%`;
 
 
-            // --- Progresso do Market Cap Alvo (USD) ---
-            const marketCapProgressPct = (marketCapCurrentUSD / MARKET_CAP_GOAL_USD) * 100;
+            // --- Progresso do Market Cap Alvo (Barra 2) ---
             if (elements.marketCapProgressFill) elements.marketCapProgressFill.style.width = Math.min(marketCapProgressPct, 100) + "%";
             if (elements.marketCapProgressLabel) elements.marketCapProgressLabel.innerText = `${marketCapProgressPct.toFixed(2)}%`;
             if (elements.marketCapProgressText) elements.marketCapProgressText.innerText = `${marketCapProgressPct.toFixed(2)}%`;
@@ -476,12 +487,12 @@ function initDApp() {
             // --- Verificação de Estado ---
             if (!elements.buyBtn) return;
 
-            if (!isActive || presalePct >= 100) {
+            if (!isActive || finalPresalePct >= 100) {
                 setStatus("Presale Finalizada (Cap atingido)!", true);
                 elements.buyBtn.disabled = true;
                 elements.buyBtn.innerText = "Finalizado";
             } else {
-                setStatus(`Conectado à Sepolia. Progresso: ${presalePct.toFixed(2)}%`, false);
+                setStatus(`Conectado à Sepolia. Progresso: ${finalPresalePct.toFixed(2)}%`, false);
                 elements.buyBtn.disabled = false;
                 elements.buyBtn.innerText = "Comprar PILL";
             }
@@ -503,6 +514,7 @@ function initDApp() {
         try {
             setStatus("Aguardando confirmação na MetaMask...", false);
             
+            // O valor em ETH digitado pelo usuário é o "value" a ser enviado na transação
             const valueToSend = parseEther(ethAmount);
 
             const tx = await presaleContract.buyTokens({ value: valueToSend });
@@ -511,7 +523,7 @@ function initDApp() {
             
             await tx.wait(); 
             
-            setStatus("Compra de tokens confirmada com sucesso!", false);
+            setStatus("Compra de tokens confirmada com sucesso! Atualizando dados...", false);
             updateUI(); 
 
         } catch(err) {
@@ -519,6 +531,7 @@ function initDApp() {
 
             let errorMsg = "Erro ao comprar tokens. Verifique o console.";
             if (err.reason) {
+                // Tentativa de pegar o erro de require/revert do contrato
                 errorMsg = `Transação Revertida: ${err.reason}`;
             } else if (err.code === 4001) {
                 errorMsg = "Transação rejeitada pelo usuário na MetaMask.";
